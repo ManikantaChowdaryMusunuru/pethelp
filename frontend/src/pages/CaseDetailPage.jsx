@@ -16,12 +16,15 @@ export const CaseDetailPage = () => {
 
   const fetchCase = async () => {
     try {
+      console.log('Fetching case:', id);
       const response = await api.get(`/api/cases/${id}`);
+      console.log('Case data:', response.data);
       setCaseData(response.data);
       setNewStatus(response.data.status);
+      setLoading(false);
     } catch (err) {
-      setError('Failed to load case');
-    } finally {
+      console.error('Error fetching case:', err);
+      setError('Failed to load case: ' + err.message);
       setLoading(false);
     }
   };

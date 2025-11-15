@@ -22,9 +22,12 @@ export default function SearchPage() {
         params.name = searchQuery;
       }
 
+      console.log('Searching with params:', params);
       const response = await api.get('/cases/search/by-contact', { params });
+      console.log('Search results:', response.data);
       setResults(response.data);
     } catch (err) {
+      console.error('Search error:', err);
       alert('Search failed: ' + err.message);
     } finally {
       setSearching(false);
