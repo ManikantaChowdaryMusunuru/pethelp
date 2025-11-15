@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage';
 import { CasesPage } from './pages/CasesPage';
 import { CreateCasePage } from './pages/CreateCasePage';
 import { CaseDetailPage } from './pages/CaseDetailPage';
+import { EditCasePage } from './pages/EditCasePage';
 import { DeletedCasesPage } from './pages/DeletedCasesPage';
 import SearchPage from './pages/SearchPage';
 
@@ -52,6 +53,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <CaseDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/cases/:id/edit"
+        element={
+          <ProtectedRoute>
+            <EditCasePage />
           </ProtectedRoute>
         }
       />

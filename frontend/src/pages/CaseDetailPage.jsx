@@ -176,6 +176,14 @@ export const CaseDetailPage = () => {
               </div>
 
               <div className="flex gap-2 mt-4">
+                {!caseData.is_deleted && (
+                  <button
+                    onClick={() => navigate(`/cases/${id}/edit`)}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                  >
+                    ✏️ Edit Case
+                  </button>
+                )}
                 {caseData.is_deleted ? (
                   <button
                     onClick={handleRecoverCase}

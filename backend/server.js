@@ -425,16 +425,22 @@ app.get('/api/cases/deleted/list', async (req, res) => {
 
 app.put('/api/cases/:id', async (req, res) => {
   try {
-    const { status, notes } = req.body;
+    const { status, notes, owner_name, owner_phone, owner_email, pet_name, pet_species, breed, service_type } = req.body;
     const updates = [];
     const params = [];
 
+    // Update case status and service type
     if (status) {
       updates.push('status = ?');
       params.push(status);
       if (status === 'Closed') {
         updates.push('closed_at = CURRENT_TIMESTAMP');
       }
+    }
+
+    if (service_type) {
+      updates.push('service_type = ?');
+      params.push(service_type);
     }
 
     if (notes) {
@@ -450,6 +456,66 @@ app.put('/api/cases/:id', async (req, res) => {
         `UPDATE cases SET ${updates.join(', ')} WHERE id = ?`,
         params
       );
+    }
+
+    // Update owner details if provided
+    if (owner_name || owner_phone || owner_email) {
+      const caseData = await dbGet('SELECT owner_id FROM cases WHERE id = ?', [req.params.id]);
+      if (caseData) {
+        const ownerUpdates = [];
+        const ownerParams = [];
+        
+        if (owner_name) {
+          ownerUpdates.push('name = ?');
+          ownerParams.push(owner_name);
+        }
+        if (owner_phone) {
+          ownerUpdates.push('phone = ?');
+          ownerParams.push(owner_phone);
+        }
+        if (owner_email) {
+          ownerUpdates.push('email = ?');
+          ownerParams.push(owner_email);
+        }
+        
+        ownerParams.push(caseData.owner_id);
+        if (ownerUpdates.length > 0) {
+          await dbRun(
+            `UPDATE owners SET ${ownerUpdates.join(', ')} WHERE id = ?`,
+            ownerParams
+          );
+        }
+      }
+    }
+
+    // Update pet details if provided
+    if (pet_name || pet_species || breed) {
+      const caseData = await dbGet('SELECT pet_id FROM cases WHERE id = ?', [req.params.id]);
+      if (caseData && caseData.pet_id) {
+        const petUpdates = [];
+        const petParams = [];
+        
+        if (pet_name) {
+          petUpdates.push('name = ?');
+          petParams.push(pet_name);
+        }
+        if (pet_species) {
+          petUpdates.push('species = ?');
+          petParams.push(pet_species);
+        }
+        if (breed) {
+          petUpdates.push('breed = ?');
+          petParams.push(breed);
+        }
+        
+        petParams.push(caseData.pet_id);
+        if (petUpdates.length > 0) {
+          await dbRun(
+            `UPDATE pets SET ${petUpdates.join(', ')} WHERE id = ?`,
+            petParams
+          );
+        }
+      }
     }
 
     const updated = await dbGet(
