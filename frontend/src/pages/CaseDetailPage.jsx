@@ -88,6 +88,19 @@ export const CaseDetailPage = () => {
     }
   };
 
+  const handleAddNote = async (e) => {
+    e.preventDefault();
+    if (!newNote.trim()) return;
+
+    try {
+      await api.post(`/api/cases/${id}/notes`, { text: newNote });
+      setNewNote('');
+      fetchCase();
+    } catch (err) {
+      setError('Failed to add note');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">

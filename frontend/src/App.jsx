@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage';
 import { CasesPage } from './pages/CasesPage';
 import { CreateCasePage } from './pages/CreateCasePage';
 import { CaseDetailPage } from './pages/CaseDetailPage';
+import { DeletedCasesPage } from './pages/DeletedCasesPage';
 import SearchPage from './pages/SearchPage';
 
 function AppRoutes() {
@@ -35,6 +36,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <SearchPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/deleted"
+        element={
+          <ProtectedRoute>
+            <DeletedCasesPage />
           </ProtectedRoute>
         }
       />

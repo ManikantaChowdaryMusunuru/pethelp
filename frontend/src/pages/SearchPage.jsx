@@ -23,9 +23,9 @@ export default function SearchPage() {
       }
 
       console.log('Searching with params:', params);
-      const response = await api.get('/cases/search/by-contact', { params });
+      const response = await api.get('/api/cases/search/by-contact', { params });
       console.log('Search results:', response.data);
-      setResults(response.data);
+      setResults(Array.isArray(response.data) ? response.data : []);
     } catch (err) {
       console.error('Search error:', err);
       alert('Search failed: ' + err.message);
