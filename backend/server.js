@@ -93,6 +93,8 @@ const initDatabase = () => {
         service_type TEXT,
         assigned_to INTEGER,
         notes TEXT,
+        is_deleted INTEGER DEFAULT 0,
+        deleted_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         closed_at DATETIME,
@@ -101,6 +103,10 @@ const initDatabase = () => {
         FOREIGN KEY (assigned_to) REFERENCES users(id)
       )
     `);
+
+    // Add is_deleted column if it doesn't exist
+    db.run(`ALTER TABLE cases ADD COLUMN is_deleted INTEGER DEFAULT 0`, () => {});
+    db.run(`ALTER TABLE cases ADD COLUMN deleted_at DATETIME`, () => {});
 
     // Case notes table
     db.run(`
@@ -224,7 +230,7 @@ app.get('/api/cases', async (req, res) => {
       FROM cases c
       JOIN owners o ON c.owner_id = o.id
       LEFT JOIN pets p ON c.pet_id = p.id
-      WHERE c.status != 'Archived'
+      WHERE c.status != 'Archived' AND c.is_deleted = 0
     `;
     let params = [];
     
@@ -328,6 +334,90 @@ app.get('/api/cases/:id', async (req, res) => {
       files,
       services
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== CASE SEARCH =====
+app.get('/api/cases/search/by-contact', async (req, res) => {
+  try {
+    const { phone, name } = req.query;
+    if (!phone && !name) {
+      return res.status(400).json({ error: 'Phone or name required' });
+    }
+
+    let sql = `
+      SELECT c.*, o.name as owner_name, o.phone as owner_phone, p.name as pet_name
+      FROM cases c
+      JOIN owners o ON c.owner_id = o.id
+      LEFT JOIN pets p ON c.pet_id = p.id
+      WHERE c.is_deleted = 0
+    `;
+    const params = [];
+
+    if (phone) {
+      sql += ' AND o.phone LIKE ?';
+      params.push(`%${phone}%`);
+    }
+    if (name) {
+      sql += ' AND o.name LIKE ?';
+      params.push(`%${name}%`);
+    }
+
+    sql += ' ORDER BY c.created_at DESC LIMIT 100';
+    const results = await dbAll(sql, params);
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== SOFT DELETE & RECOVERY =====
+app.delete('/api/cases/:id', async (req, res) => {
+  try {
+    await dbRun(
+      'UPDATE cases SET is_deleted = 1, deleted_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [req.params.id]
+    );
+    res.json({ success: true, message: 'Case deleted (soft delete)' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cases/:id/recover', async (req, res) => {
+  try {
+    await dbRun(
+      'UPDATE cases SET is_deleted = 0, deleted_at = NULL WHERE id = ?',
+      [req.params.id]
+    );
+    const recovered = await dbGet(
+      `SELECT c.*, o.name as owner_name, p.name as pet_name
+       FROM cases c
+       JOIN owners o ON c.owner_id = o.id
+       LEFT JOIN pets p ON c.pet_id = p.id
+       WHERE c.id = ?`,
+      [req.params.id]
+    );
+    res.json(recovered);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== GET DELETED CASES =====
+app.get('/api/cases/deleted/list', async (req, res) => {
+  try {
+    const deleted = await dbAll(
+      `SELECT c.*, o.name as owner_name, o.phone as owner_phone, p.name as pet_name
+       FROM cases c
+       JOIN owners o ON c.owner_id = o.id
+       LEFT JOIN pets p ON c.pet_id = p.id
+       WHERE c.is_deleted = 1
+       ORDER BY c.deleted_at DESC LIMIT 50`
+    );
+    res.json(deleted);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

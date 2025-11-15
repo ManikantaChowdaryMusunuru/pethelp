@@ -58,12 +58,20 @@ export const CasesPage = () => {
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-3xl font-bold text-gray-800">Active Cases</h2>
-          <Link
-            to="/cases/new"
-            className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold transition"
-          >
-            + New Case
-          </Link>
+          <div className="flex gap-3">
+            <Link
+              to="/search"
+              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-semibold transition"
+            >
+              🔍 Search Cases
+            </Link>
+            <Link
+              to="/cases/new"
+              className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold transition"
+            >
+              + New Case
+            </Link>
+          </div>
         </div>
 
         {/* Filter Buttons */}

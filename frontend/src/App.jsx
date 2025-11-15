@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage';
 import { CasesPage } from './pages/CasesPage';
 import { CreateCasePage } from './pages/CreateCasePage';
 import { CaseDetailPage } from './pages/CaseDetailPage';
+import SearchPage from './pages/SearchPage';
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -26,6 +27,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <CreateCasePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/search"
+        element={
+          <ProtectedRoute>
+            <SearchPage />
           </ProtectedRoute>
         }
       />

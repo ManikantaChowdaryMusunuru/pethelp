@@ -30,16 +30,31 @@ export const CaseDetailPage = () => {
     fetchCase();
   }, [id]);
 
-  const handleAddNote = async (e) => {
-    e.preventDefault();
-    if (!newNote.trim()) return;
+  const handleDeleteCase = async () => {
+    if (!window.confirm('Are you sure you want to delete this case? You can recover it later.')) {
+      return;
+    }
 
     try {
-      await api.post(`/api/cases/${id}/notes`, { text: newNote });
-      setNewNote('');
+      await api.delete(`/api/cases/${id}`);
+      alert('Case deleted successfully');
+      navigate('/');
+    } catch (err) {
+      setError('Failed to delete case');
+    }
+  };
+
+  const handleRecoverCase = async () => {
+    if (!window.confirm('Recover this deleted case?')) {
+      return;
+    }
+
+    try {
+      await api.post(`/api/cases/${id}/recover`);
+      alert('Case recovered successfully');
       fetchCase();
     } catch (err) {
-      setError('Failed to add note');
+      setError('Failed to recover case');
     }
   };
 
@@ -142,6 +157,24 @@ export const CaseDetailPage = () => {
                   <p className="text-sm text-gray-600">Last Updated</p>
                   <p className="text-gray-900">{new Date(caseData.updated_at).toLocaleDateString()}</p>
                 </div>
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                {caseData.is_deleted ? (
+                  <button
+                    onClick={handleRecoverCase}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
+                  >
+                    🔄 Recover Case
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleDeleteCase}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+                  >
+                    🗑️ Delete Case
+                  </button>
+                )}
               </div>
             </div>
 
