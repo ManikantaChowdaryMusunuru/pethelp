@@ -378,6 +378,58 @@ app.get('/api/cases/search/by-contact', async (req, res) => {
     }
 
     sql += ' ORDER BY c.created_at DESC LIMIT 100';
+    const cases = await dbAll(sql, params);
+    res.json(cases);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== AUTOCOMPLETE/SUGGESTIONS =====
+app.get('/api/cases/search/suggestions', async (req, res) => {
+  try {
+    const { query, type } = req.query;
+    
+    if (!query || query.length < 1) {
+      return res.json([]);
+    }
+
+    let results = [];
+
+    if (type === 'phone' || !type) {
+      // Search by phone number
+      const phoneResults = await dbAll(
+        `SELECT DISTINCT o.phone 
+         FROM cases c
+         JOIN owners o ON c.owner_id = o.id
+         WHERE c.is_deleted = 0 AND o.phone LIKE ?
+         ORDER BY o.phone ASC
+         LIMIT 10`,
+        [`${query}%`]
+      );
+      results = phoneResults.map(r => ({ value: r.phone, type: 'phone' }));
+    }
+
+    if (type === 'name' || !type) {
+      // Search by owner name
+      const nameResults = await dbAll(
+        `SELECT DISTINCT o.name 
+         FROM cases c
+         JOIN owners o ON c.owner_id = o.id
+         WHERE c.is_deleted = 0 AND o.name LIKE ?
+         ORDER BY o.name ASC
+         LIMIT 10`,
+        [`%${query}%`]
+      );
+      const nameSuggestions = nameResults.map(r => ({ value: r.name, type: 'name' }));
+      results = results.concat(nameSuggestions);
+    }
+
+    res.json(results.slice(0, 10));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
     const results = await dbAll(sql, params);
     res.json(results);
   } catch (err) {
