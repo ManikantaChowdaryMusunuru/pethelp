@@ -580,7 +580,7 @@ This project is developed for the Pet Help Center Hackathon.
 
 ## 🤝 Contributors
 
-Developed by **Manikanta Chowdary Musunuru** for the Pet Help Center Case Management System Hackathon.
+Developed by **Manikanta Chowdary Musunuru , Ashritha Kotagiri , Nagaraju Gulakarm** for the Pet Help Center Case Management System Hackathon.
 
 ---
 
