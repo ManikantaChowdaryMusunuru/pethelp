@@ -855,6 +855,115 @@ app.post('/api/import/confirm', async (req, res) => {
   }
 });
 
+// ===== IMPORT CONFIRMATION ENDPOINT =====
+app.post('/api/import/confirm', (req, res) => {
+  try {
+    const { importData } = req.body;
+    
+    if (!Array.isArray(importData) || importData.length === 0) {
+      return res.status(400).json({ error: 'No data to import' });
+    }
+
+    const db = new Database(DATABASE_PATH);
+    let importedCount = 0;
+    const errors = [];
+
+    db.transaction(() => {
+      importData.forEach((item, idx) => {
+        try {
+          const stmt = db.prepare(`
+            INSERT INTO cases (owner_name, owner_phone, owner_email, pet_name, pet_species, breed, service_type, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', datetime('now'))
+          `);
+          
+          stmt.run(
+            item.contact_name || '',
+            item.phone_number || '',
+            item.email || '',
+            item.pet_name || '',
+            item.pet_species || item.species || '',
+            item.breed || '',
+            item.service_type || ''
+          );
+          
+          importedCount++;
+        } catch (err) {
+          errors.push({ index: idx, record: item, error: err.message });
+        }
+      });
+    })();
+
+    res.json({
+      success: true,
+      importedCount,
+      errors: errors.length > 0 ? errors : undefined,
+      message: `Successfully imported ${importedCount} cases`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== DASHBOARD STATISTICS =====
+app.get('/api/dashboard/stats', (req, res) => {
+  try {
+    const db = new Database(DATABASE_PATH);
+    
+    // Total cases
+    const totalCases = db.prepare('SELECT COUNT(*) as count FROM cases WHERE is_deleted = 0').get();
+    
+    // Active cases (status = open)
+    const activeCases = db.prepare("SELECT COUNT(*) as count FROM cases WHERE status = 'open' AND is_deleted = 0").get();
+    
+    // Cases by status
+    const casesByStatus = db.prepare(`
+      SELECT status, COUNT(*) as count 
+      FROM cases 
+      WHERE is_deleted = 0
+      GROUP BY status
+    `).all();
+    
+    // Top service types
+    const topServices = db.prepare(`
+      SELECT service_type, COUNT(*) as count 
+      FROM cases 
+      WHERE is_deleted = 0 AND service_type != ''
+      GROUP BY service_type 
+      ORDER BY count DESC 
+      LIMIT 5
+    `).all();
+    
+    // Top species
+    const topSpecies = db.prepare(`
+      SELECT pet_species, COUNT(*) as count 
+      FROM cases 
+      WHERE is_deleted = 0 AND pet_species != ''
+      GROUP BY pet_species 
+      ORDER BY count DESC 
+      LIMIT 5
+    `).all();
+    
+    // This month's cases
+    const thisMonthCases = db.prepare(`
+      SELECT COUNT(*) as count 
+      FROM cases 
+      WHERE is_deleted = 0 
+      AND date(created_at) >= date('now', 'start of month')
+    `).get();
+    
+    res.json({
+      totalCases: totalCases.count,
+      activeCases: activeCases.count,
+      thisMonthCases: thisMonthCases.count,
+      casesByStatus: casesByStatus.map(s => ({ status: s.status, count: s.count })),
+      topServices: topServices.map(s => ({ service: s.service_type, count: s.count })),
+      topSpecies: topSpecies.map(s => ({ species: s.pet_species, count: s.count }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ===== HEALTH CHECK =====
 app.get('/health', (req, res) => {
   res.json({

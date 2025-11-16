@@ -79,23 +79,34 @@ export const DataImportPage = () => {
   const handleConfirmImport = async () => {
     if (!previewData) return;
 
-    const allRecords = previewData.previewData.flatMap(f => f.records || []);
+    const allRecords = previewData.previewData
+      .flatMap(f => f.records || [])
+      .filter(r => !r._errors || r._errors.length === 0)
+      .map(r => {
+        const { _index, _errors, ...cleaned } = r;
+        return cleaned;
+      });
     
+    if (allRecords.length === 0) {
+      setError('No valid records to import. Please fix errors in preview.');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
     try {
-      const response = await api.post('/api/import/confirm', { records: allRecords });
-      alert(`Successfully imported ${response.data.importedCount} cases`);
+      const response = await api.post('/api/import/confirm', { importData: allRecords });
+      alert(`✅ Successfully imported ${response.data.importedCount} cases!`);
       
       if (response.data.errors && response.data.errors.length > 0) {
-        alert(`Some records had errors:\n${response.data.errors.slice(0, 5).join('\n')}`);
+        alert(`⚠️ Some records had errors:\n${response.data.errors.slice(0, 5).map(e => `${e.index}: ${e.error}`).join('\n')}`);
       }
       
       setPreviewData(null);
-      navigate('/');
+      navigate('/cases');
     } catch (err) {
-      setError('Import confirmation failed: ' + err.message);
+      setError('Import confirmation failed: ' + (err.response?.data?.error || err.message));
     } finally {
       setLoading(false);
     }
