@@ -127,7 +127,7 @@ export const CaseDetailPage = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        <Link to="/" className="text-blue-600 hover:text-blue-800 mb-4 inline-block">
+        <Link to="/cases" className="text-blue-600 hover:text-blue-800 mb-4 inline-block">
           ← Back to Cases
         </Link>
 
