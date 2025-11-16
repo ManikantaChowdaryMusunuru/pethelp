@@ -856,7 +856,7 @@ app.post('/api/import/confirm', async (req, res) => {
 });
 
 // ===== IMPORT CONFIRMATION ENDPOINT =====
-app.post('/api/import/confirm', (req, res) => {
+app.post('/api/import/confirm', async (req, res) => {
   try {
     const { importData } = req.body;
     
@@ -864,19 +864,16 @@ app.post('/api/import/confirm', (req, res) => {
       return res.status(400).json({ error: 'No data to import' });
     }
 
-    const db = new Database(DATABASE_PATH);
     let importedCount = 0;
     const errors = [];
 
-    db.transaction(() => {
-      importData.forEach((item, idx) => {
-        try {
-          const stmt = db.prepare(`
-            INSERT INTO cases (owner_name, owner_phone, owner_email, pet_name, pet_species, breed, service_type, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', datetime('now'))
-          `);
-          
-          stmt.run(
+    for (let idx = 0; idx < importData.length; idx++) {
+      const item = importData[idx];
+      try {
+        await dbRun(
+          `INSERT INTO cases (owner_name, owner_phone, owner_email, pet_name, pet_species, breed, service_type, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'open', datetime('now'))`,
+          [
             item.contact_name || '',
             item.phone_number || '',
             item.email || '',
@@ -884,14 +881,13 @@ app.post('/api/import/confirm', (req, res) => {
             item.pet_species || item.species || '',
             item.breed || '',
             item.service_type || ''
-          );
-          
-          importedCount++;
-        } catch (err) {
-          errors.push({ index: idx, record: item, error: err.message });
-        }
-      });
-    })();
+          ]
+        );
+        importedCount++;
+      } catch (err) {
+        errors.push({ index: idx, record: item, error: err.message });
+      }
+    }
 
     res.json({
       success: true,
@@ -905,59 +901,57 @@ app.post('/api/import/confirm', (req, res) => {
 });
 
 // ===== DASHBOARD STATISTICS =====
-app.get('/api/dashboard/stats', (req, res) => {
+app.get('/api/dashboard/stats', async (req, res) => {
   try {
-    const db = new Database(DATABASE_PATH);
-    
     // Total cases
-    const totalCases = db.prepare('SELECT COUNT(*) as count FROM cases WHERE is_deleted = 0').get();
+    const totalCases = await dbGet('SELECT COUNT(*) as count FROM cases WHERE is_deleted = 0', []);
     
     // Active cases (status = open)
-    const activeCases = db.prepare("SELECT COUNT(*) as count FROM cases WHERE status = 'open' AND is_deleted = 0").get();
+    const activeCases = await dbGet("SELECT COUNT(*) as count FROM cases WHERE status = 'open' AND is_deleted = 0", []);
     
     // Cases by status
-    const casesByStatus = db.prepare(`
+    const casesByStatus = await dbAll(`
       SELECT status, COUNT(*) as count 
       FROM cases 
       WHERE is_deleted = 0
       GROUP BY status
-    `).all();
+    `, []);
     
     // Top service types
-    const topServices = db.prepare(`
+    const topServices = await dbAll(`
       SELECT service_type, COUNT(*) as count 
       FROM cases 
       WHERE is_deleted = 0 AND service_type != ''
       GROUP BY service_type 
       ORDER BY count DESC 
       LIMIT 5
-    `).all();
+    `, []);
     
     // Top species
-    const topSpecies = db.prepare(`
+    const topSpecies = await dbAll(`
       SELECT pet_species, COUNT(*) as count 
       FROM cases 
       WHERE is_deleted = 0 AND pet_species != ''
       GROUP BY pet_species 
       ORDER BY count DESC 
       LIMIT 5
-    `).all();
+    `, []);
     
     // This month's cases
-    const thisMonthCases = db.prepare(`
+    const thisMonthCases = await dbGet(`
       SELECT COUNT(*) as count 
       FROM cases 
       WHERE is_deleted = 0 
       AND date(created_at) >= date('now', 'start of month')
-    `).get();
+    `, []);
     
     res.json({
-      totalCases: totalCases.count,
-      activeCases: activeCases.count,
-      thisMonthCases: thisMonthCases.count,
-      casesByStatus: casesByStatus.map(s => ({ status: s.status, count: s.count })),
-      topServices: topServices.map(s => ({ service: s.service_type, count: s.count })),
-      topSpecies: topSpecies.map(s => ({ species: s.pet_species, count: s.count }))
+      totalCases: totalCases?.count || 0,
+      activeCases: activeCases?.count || 0,
+      thisMonthCases: thisMonthCases?.count || 0,
+      casesByStatus: (casesByStatus || []).map(s => ({ status: s.status, count: s.count })),
+      topServices: (topServices || []).map(s => ({ service: s.service_type, count: s.count })),
+      topSpecies: (topSpecies || []).map(s => ({ species: s.pet_species, count: s.count }))
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
