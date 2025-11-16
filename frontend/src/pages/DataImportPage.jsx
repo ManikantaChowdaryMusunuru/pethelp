@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -265,9 +265,9 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
           <p className="text-sm text-gray-600">Total Records</p>
           <p className="text-2xl font-bold text-blue-600">{totalRecords}</p>
         </div>
-        <div className={`p-4 rounded ${recordsWithErrors.length > 0 ? 'bg-yellow-50' : 'bg-green-50'}`}>
+        <div className={`p-4 rounded ${recordsWithErrors.length > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
           <p className="text-sm text-gray-600">Records with Issues</p>
-          <p className={`text-2xl font-bold ${recordsWithErrors.length > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
+          <p className={`text-2xl font-bold ${recordsWithErrors.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
             {recordsWithErrors.length}
           </p>
         </div>
@@ -291,6 +291,11 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
                 <p className="text-sm text-gray-600 mb-4">
                   {fileData.recordCount} records {fileData.status === 'warning' ? '⚠️ (with issues)' : '✅ (valid)'}
                 </p>
+                {fileData.status === 'warning' && (
+                  <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded mb-4">
+                    <p className="text-sm font-semibold text-red-800">Some records have validation errors</p>
+                  </div>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-100">
@@ -304,19 +309,35 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
                     </thead>
                     <tbody>
                       {(fileData.records || []).slice(0, 5).map((record, recordIdx) => (
-                        <tr key={recordIdx} className={record._errors?.length > 0 ? 'bg-yellow-50' : ''}>
-                          <td className="px-4 py-2">{record.owner_name}</td>
-                          <td className="px-4 py-2">{record.owner_phone}</td>
-                          <td className="px-4 py-2">{record.pet_name}</td>
-                          <td className="px-4 py-2">{record.service_type}</td>
-                          <td className="px-4 py-2">
-                            {record._errors?.length > 0 ? (
-                              <span className="text-xs text-yellow-700">{record._errors.length} error(s)</span>
-                            ) : (
-                              <span className="text-xs text-green-700">✓</span>
-                            )}
-                          </td>
-                        </tr>
+                        <React.Fragment key={recordIdx}>
+                          <tr className={record._errors?.length > 0 ? 'bg-red-50' : 'bg-green-50'}>
+                            <td className="px-4 py-2">{record.owner_name || <span className="text-red-500 font-semibold">MISSING</span>}</td>
+                            <td className="px-4 py-2">{record.owner_phone || <span className="text-red-500 font-semibold">MISSING</span>}</td>
+                            <td className="px-4 py-2">{record.pet_name || <span className="text-red-500 font-semibold">MISSING</span>}</td>
+                            <td className="px-4 py-2">{record.service_type || <span className="text-red-500 font-semibold">MISSING</span>}</td>
+                            <td className="px-4 py-2">
+                              {record._errors?.length > 0 ? (
+                                <span className="text-xs text-red-700 font-semibold">✗ {record._errors.length}</span>
+                              ) : (
+                                <span className="text-xs text-green-700 font-semibold">✓</span>
+                              )}
+                            </td>
+                          </tr>
+                          {record._errors?.length > 0 && (
+                            <tr className="bg-red-100">
+                              <td colSpan="5" className="px-4 py-2">
+                                <div className="text-xs text-red-800 space-y-1">
+                                  {record._errors.map((error, errIdx) => (
+                                    <div key={errIdx} className="flex items-start gap-2">
+                                      <span className="text-red-600 font-bold mt-0.5">•</span>
+                                      <span>{error}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>

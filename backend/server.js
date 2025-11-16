@@ -430,12 +430,6 @@ app.get('/api/cases/search/suggestions', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-    const results = await dbAll(sql, params);
-    res.json(results);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ===== SOFT DELETE & RECOVERY =====
 app.delete('/api/cases/:id', async (req, res) => {
@@ -808,23 +802,72 @@ app.post('/api/import/preview', upload.array('files'), async (req, res) => {
   }
 });
 
-// Validate case record
+// Validate case record with detailed error messages
 const validateCaseRecord = (record) => {
   const errors = [];
+  const missingFields = [];
   
   // Required fields
   const required = ['owner_name', 'owner_phone', 'pet_name', 'service_type'];
   required.forEach(field => {
     if (!record[field] || !String(record[field]).trim()) {
-      errors.push(`Missing required field: ${field}`);
+      missingFields.push(field);
     }
   });
+
+  if (missingFields.length > 0) {
+    errors.push(`Missing required fields: ${missingFields.join(', ')}`);
+  }
+
+  // Validate owner_name
+  if (record.owner_name) {
+    const nameStr = String(record.owner_name).trim();
+    if (nameStr.length < 2) {
+      errors.push('Owner name must be at least 2 characters long');
+    }
+  }
 
   // Validate phone format (basic)
   if (record.owner_phone) {
     const phoneStr = String(record.owner_phone).trim();
-    if (phoneStr.length < 7) {
-      errors.push('Invalid phone number (too short)');
+    const phoneDigits = phoneStr.replace(/\D/g, '');
+    if (phoneDigits.length < 7) {
+      errors.push(`Invalid phone number: "${phoneStr}" - must contain at least 7 digits`);
+    }
+  }
+
+  // Validate email if provided
+  if (record.owner_email) {
+    const emailStr = String(record.owner_email).trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailStr)) {
+      errors.push(`Invalid email format: "${emailStr}"`);
+    }
+  }
+
+  // Validate pet_name
+  if (record.pet_name) {
+    const petNameStr = String(record.pet_name).trim();
+    if (petNameStr.length < 1) {
+      errors.push('Pet name cannot be empty');
+    }
+  }
+
+  // Validate service_type
+  if (record.service_type) {
+    const validServices = ['adoption', 'rescue', 'medical', 'lost_found', 'shelter', 'training', 'grooming', 'boarding', 'other'];
+    const serviceStr = String(record.service_type).trim().toLowerCase();
+    if (!validServices.includes(serviceStr)) {
+      errors.push(`Invalid service type: "${record.service_type}" - must be one of: ${validServices.join(', ')}`);
+    }
+  }
+
+  // Validate status if provided
+  if (record.status) {
+    const validStatuses = ['open', 'in_progress', 'completed', 'on_hold'];
+    const statusStr = String(record.status).trim().toLowerCase();
+    if (!validStatuses.includes(statusStr)) {
+      errors.push(`Invalid status: "${record.status}" - must be one of: ${validStatuses.join(', ')}`);
     }
   }
 
