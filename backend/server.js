@@ -89,10 +89,16 @@ const initDatabase = () => {
     db.run(`
       CREATE TABLE IF NOT EXISTS cases (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        owner_id INTEGER NOT NULL,
-        pet_id INTEGER,
-        status TEXT DEFAULT 'New',
+        owner_name TEXT,
+        owner_phone TEXT,
+        owner_email TEXT,
+        pet_name TEXT,
+        pet_species TEXT,
+        breed TEXT,
+        status TEXT DEFAULT 'open',
         service_type TEXT,
+        owner_id INTEGER,
+        pet_id INTEGER,
         assigned_to INTEGER,
         notes TEXT,
         is_deleted INTEGER DEFAULT 0,
@@ -106,9 +112,13 @@ const initDatabase = () => {
       )
     `);
 
-    // Add is_deleted column if it doesn't exist
-    db.run(`ALTER TABLE cases ADD COLUMN is_deleted INTEGER DEFAULT 0`, () => {});
-    db.run(`ALTER TABLE cases ADD COLUMN deleted_at DATETIME`, () => {});
+    // Add missing columns if they don't exist
+    db.run(`ALTER TABLE cases ADD COLUMN owner_name TEXT`, () => {});
+    db.run(`ALTER TABLE cases ADD COLUMN owner_phone TEXT`, () => {});
+    db.run(`ALTER TABLE cases ADD COLUMN owner_email TEXT`, () => {});
+    db.run(`ALTER TABLE cases ADD COLUMN pet_name TEXT`, () => {});
+    db.run(`ALTER TABLE cases ADD COLUMN pet_species TEXT`, () => {});
+    db.run(`ALTER TABLE cases ADD COLUMN breed TEXT`, () => {});
 
     // Case notes table
     db.run(`
