@@ -77,6 +77,22 @@ export function AdminPanelPage() {
     }
   };
 
+  const handleToggleActivation = async (userId, isActive) => {
+    const action = isActive ? 'deactivate' : 'activate';
+    const endpoint = isActive ? 'deactivate' : 'activate';
+    
+    if (window.confirm(`Are you sure you want to ${action} this user?`)) {
+      try {
+        const response = await api.post(`/api/admin/users/${userId}/${endpoint}`);
+        alert('✅ ' + response.data.message);
+        await fetchUsers();
+        setError(null);
+      } catch (err) {
+        setError(err.response?.data?.error || `Failed to ${action} user`);
+      }
+    }
+  };
+
   const handleResetPassword = async (userId) => {
     if (window.confirm('Are you sure? This will reset the password to the user\'s email address.')) {
       try {
@@ -210,34 +226,54 @@ export function AdminPanelPage() {
                   <th className="px-6 py-3 text-left text-sm font-bold text-gray-900">Email</th>
                   <th className="px-6 py-3 text-left text-sm font-bold text-gray-900">Name</th>
                   <th className="px-6 py-3 text-left text-sm font-bold text-gray-900">Role</th>
+                  <th className="px-6 py-3 text-center text-sm font-bold text-gray-900">Status</th>
                   <th className="px-6 py-3 text-left text-sm font-bold text-gray-900">Joined</th>
                   <th className="px-6 py-3 text-left text-sm font-bold text-gray-900">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((u) => (
-                  <tr key={u.id} className="border-b border-gray-200 hover:bg-gray-50 transition">
+                  <tr key={u.id} className={`border-b transition ${!u.is_active ? 'bg-gray-100' : 'hover:bg-gray-50'}`}>
                     <td className="px-6 py-4 text-sm text-gray-900 font-medium">{u.email}</td>
                     <td className="px-6 py-4 text-sm text-gray-700">{u.name}</td>
                     <td className="px-6 py-4 text-sm">
                       <select
                         value={u.role}
                         onChange={(e) => handleUpdateRole(u.id, e.target.value)}
+                        disabled={!u.is_active}
                         className={`px-3 py-1 rounded-full font-bold text-white ${
                           u.role === 'admin' ? 'bg-red-600' : 'bg-blue-600'
-                        }`}
+                        } disabled:opacity-50`}
                       >
                         <option value="staff">Staff</option>
                         <option value="admin">Admin</option>
                       </select>
                     </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold text-white ${
+                        u.is_active ? 'bg-green-600' : 'bg-gray-600'
+                      }`}>
+                        {u.is_active ? '✓ Active' : '✗ Inactive'}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 text-sm text-gray-700">
                       {new Date(u.created_at).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 text-sm space-x-2">
+                    <td className="px-6 py-4 text-sm space-x-2 flex flex-wrap gap-2">
+                      <button
+                        onClick={() => handleToggleActivation(u.id, u.is_active)}
+                        className={`font-semibold ${
+                          u.is_active 
+                            ? 'text-orange-600 hover:text-orange-800' 
+                            : 'text-green-600 hover:text-green-800'
+                        }`}
+                      >
+                        {u.is_active ? '🔒 Deactivate' : '🔓 Activate'}
+                      </button>
                       <button
                         onClick={() => handleResetPassword(u.id)}
-                        className="text-blue-600 hover:text-blue-800 font-semibold"
+                        disabled={!u.is_active}
+                        className="text-blue-600 hover:text-blue-800 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         🔑 Reset
                       </button>
@@ -262,28 +298,35 @@ export function AdminPanelPage() {
           )}
         </div>
 
-        {/* Legend */}
+        {/* Legend & Permissions */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-          <h3 className="font-bold text-gray-900 mb-3">Role Permissions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <h3 className="font-bold text-gray-900 mb-3">🔐 Role Permissions & User Management</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <p className="font-bold text-blue-900">👤 Staff</p>
-              <ul className="text-sm text-gray-700 mt-2 space-y-1">
+              <p className="font-bold text-blue-900 mb-3">👤 Staff Role</p>
+              <ul className="text-sm text-gray-700 space-y-1">
                 <li>✅ View & manage cases</li>
                 <li>✅ Import data</li>
                 <li>✅ View reports</li>
+                <li>✅ Generate analytics</li>
                 <li>❌ Manage users</li>
               </ul>
             </div>
             <div>
-              <p className="font-bold text-red-900">👨‍💼 Admin</p>
-              <ul className="text-sm text-gray-700 mt-2 space-y-1">
+              <p className="font-bold text-red-900 mb-3">👨‍💼 Admin Role</p>
+              <ul className="text-sm text-gray-700 space-y-1">
                 <li>✅ All Staff permissions</li>
-                <li>✅ Manage users (add/edit/delete)</li>
+                <li>✅ Add new users</li>
+                <li>✅ Edit user roles</li>
+                <li>✅ Activate/Deactivate users</li>
                 <li>✅ Reset passwords</li>
+                <li>✅ Delete users</li>
                 <li>✅ Access admin panel</li>
               </ul>
             </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-blue-300">
+            <p className="text-sm text-gray-600"><strong>💡 Tip:</strong> Deactivated users cannot log in but their data remains. Use this instead of deletion to preserve history.</p>
           </div>
         </div>
       </main>

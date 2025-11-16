@@ -34,11 +34,25 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 });
 
-// Database setup
-const db = new sqlite3.Database(process.env.DATABASE_PATH || './phcs.db', (err) => {
-  if (err) console.error('Database error:', err);
-  else console.log('Connected to SQLite database');
-});
+// Authentication middleware
+const requireRole = (role) => {
+  return (req, res, next) => {
+    const userId = req.headers['x-user-id'];
+    const userRole = req.headers['x-user-role'];
+    
+    if (!userId || !userRole) {
+      return res.status(401).json({ error: 'Unauthorized - Missing auth headers' });
+    }
+    
+    if (userRole !== role) {
+      return res.status(403).json({ error: `Forbidden - ${role} role required` });
+    }
+    
+    req.userId = userId;
+    req.userRole = userRole;
+    next();
+  };
+};
 
 // Initialize database
 const initDatabase = () => {
@@ -164,11 +178,14 @@ const initDatabase = () => {
       )
     `);
 
+    // Add missing columns if they don't exist
+    db.run(`ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1`, () => {});
+
     // Create demo user
     db.run(`
-      INSERT OR IGNORE INTO users (email, password_hash, name, role)
-      VALUES (?, ?, ?, ?)
-    `, ['demo@jhs.org', 'demo123', 'Demo Staff', 'staff']);
+      INSERT OR IGNORE INTO users (email, password_hash, name, role, is_active)
+      VALUES (?, ?, ?, ?, ?)
+    `, ['demo@jhs.org', 'demo123', 'Demo Staff', 'staff', 1]);
 
     console.log('Database tables initialized');
   });
@@ -209,8 +226,12 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password required' });
+    }
+    
     const user = await dbGet(
-      'SELECT * FROM users WHERE email = ? AND password_hash = ?',
+      'SELECT id, email, name, role, created_at FROM users WHERE email = ? AND password_hash = ?',
       [email, password]
     );
 
@@ -220,7 +241,8 @@ app.post('/api/auth/login', async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
-        token: `token-${user.id}`
+        token: `token-${user.id}`,
+        created_at: user.created_at
       });
     } else {
       res.status(401).json({ error: 'Invalid credentials' });
@@ -1072,10 +1094,7 @@ app.get('/api/dashboard/stats', async (req, res) => {
 // ===== USER MANAGEMENT (Admin Only) =====
 app.get('/api/admin/users', async (req, res) => {
   try {
-    const userRole = req.query.userRole || 'staff'; // Check auth in production
-    
-    // In production, verify userRole is 'admin'
-    const users = await dbAll('SELECT id, email, name, role, created_at FROM users ORDER BY created_at DESC', []);
+    const users = await dbAll('SELECT id, email, name, role, is_active, created_at FROM users ORDER BY created_at DESC', []);
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1115,10 +1134,10 @@ app.post('/api/admin/users', async (req, res) => {
 app.put('/api/admin/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { role, is_active } = req.body;
+    const { role } = req.body;
     
     if (!['admin', 'staff'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role' });
+      return res.status(400).json({ error: 'Invalid role. Must be admin or staff' });
     }
     
     await dbRun(
@@ -1126,7 +1145,50 @@ app.put('/api/admin/users/:id', async (req, res) => {
       [role, id]
     );
     
-    res.json({ success: true, message: `User updated to role ${role}` });
+    const updated = await dbGet('SELECT id, email, name, role, is_active, created_at FROM users WHERE id = ?', [id]);
+    res.json({ success: true, user: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Activate user account
+app.post('/api/admin/users/:id/activate', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const user = await dbGet('SELECT * FROM users WHERE id = ?', [id]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    await dbRun('UPDATE users SET is_active = 1 WHERE id = ?', [id]);
+    res.json({ success: true, message: `User ${user.email} activated` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Deactivate user account
+app.post('/api/admin/users/:id/deactivate', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const user = await dbGet('SELECT role FROM users WHERE id = ?', [id]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Prevent deactivating the last admin
+    if (user.role === 'admin') {
+      const activeAdminCount = await dbGet('SELECT COUNT(*) as count FROM users WHERE role = "admin" AND is_active = 1', []);
+      if (activeAdminCount.count <= 1) {
+        return res.status(400).json({ error: 'Cannot deactivate the last active admin user' });
+      }
+    }
+    
+    await dbRun('UPDATE users SET is_active = 0 WHERE id = ?', [id]);
+    res.json({ success: true, message: `User ${user.email} deactivated` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
