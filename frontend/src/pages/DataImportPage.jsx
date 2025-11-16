@@ -358,6 +358,19 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
       <h2 className="text-2xl font-bold mb-2">Review & Edit Imported Data</h2>
       <p className="text-gray-600 mb-6">Edit any fields before committing. Invalid records will be skipped during import.</p>
 
+      {/* Source System Info */}
+      {previewData.previewData.some(f => f.sourceSystem && f.sourceSystem !== 'manual') && (
+        <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+          <h3 className="font-semibold text-blue-900 mb-2">🔄 Source Systems Detected</h3>
+          {previewData.previewData.map((file, idx) => file.sourceSystem && (
+            <div key={idx} className="text-sm text-blue-800 mb-1">
+              <strong>{file.fileName}:</strong> {file.sourceSystem === 'voicemail' ? '📞 Voicemail System' : file.sourceSystem === 'waitwhile' ? '🚶 WaitWhile Check-in' : '📝 Manual Entry'}
+            </div>
+          ))}
+          <p className="text-xs text-blue-700 mt-2">Column names have been automatically mapped to unified case fields.</p>
+        </div>
+      )}
+
       {/* Statistics Cards */}
       <div className="mb-6 grid grid-cols-4 gap-4">
         <div className="bg-blue-50 p-4 rounded">

@@ -85,7 +85,7 @@ export const ReportingPage = () => {
     } else if (reportType === 'species' && reportData.species) {
       rows.push(['Species', 'Total Cases', 'Outcomes Recorded', 'Service Types']);
       reportData.species.forEach(row => {
-        rows.push([row.pet_species, row.count, row.outcomes_recorded, row.service_types]);
+        rows.push([row.pet_species || 'Unknown', row.count, row.outcomes_recorded, row.service_types]);
       });
     } else if (reportType === 'detailed-outcomes' && reportData.cases) {
       rows.push(['Case ID', 'Owner', 'Pet Name', 'Species', 'Service Type', 'Status', 'Outcome', 'Created Date']);
@@ -94,10 +94,10 @@ export const ReportingPage = () => {
           row.id,
           row.owner_name,
           row.pet_name,
-          row.pet_species,
+          row.pet_species || 'Unknown',
           row.service_type,
           row.status,
-          row.outcome,
+          row.outcome || 'No Outcome',
           new Date(row.created_at).toLocaleDateString()
         ]);
       });
@@ -210,35 +210,42 @@ export const ReportingPage = () => {
             {reportType === 'outcomes' && reportData.outcomes && (
               <div>
                 <h3 className="text-xl font-semibold mb-4">Case Outcomes Distribution</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="px-4 py-2 text-left">Outcome</th>
-                        <th className="px-4 py-2 text-right">Count</th>
-                        <th className="px-4 py-2 text-right">Percentage</th>
-                        <th className="px-4 py-2 text-center">Visual</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reportData.outcomes.map((outcome, idx) => (
-                        <tr key={idx} className="border-b hover:bg-gray-50">
-                          <td className="px-4 py-2 font-semibold">{outcome.outcome}</td>
-                          <td className="px-4 py-2 text-right">{outcome.count}</td>
-                          <td className="px-4 py-2 text-right font-semibold">{outcome.percentage}%</td>
-                          <td className="px-4 py-2">
-                            <div className="w-full bg-gray-200 rounded-full h-2">
-                              <div
-                                className="bg-blue-600 h-2 rounded-full"
-                                style={{ width: `${outcome.percentage}%` }}
-                              />
-                            </div>
-                          </td>
+                {reportData.outcomes.length === 0 ? (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded p-6 text-center">
+                    <p className="text-gray-700 mb-2">No outcome data available for the selected date range.</p>
+                    <p className="text-sm text-gray-600">Cases need to have an outcome recorded to appear in this report. Edit existing cases to add outcomes.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-4 py-2 text-left">Outcome</th>
+                          <th className="px-4 py-2 text-right">Count</th>
+                          <th className="px-4 py-2 text-right">Percentage</th>
+                          <th className="px-4 py-2 text-center">Visual</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {reportData.outcomes.map((outcome, idx) => (
+                          <tr key={idx} className="border-b hover:bg-gray-50">
+                            <td className="px-4 py-2 font-semibold">{outcome.outcome}</td>
+                            <td className="px-4 py-2 text-right">{outcome.count}</td>
+                            <td className="px-4 py-2 text-right font-semibold">{outcome.percentage}%</td>
+                            <td className="px-4 py-2">
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div
+                                  className="bg-blue-600 h-2 rounded-full"
+                                  style={{ width: `${outcome.percentage}%` }}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 
@@ -343,34 +350,40 @@ export const ReportingPage = () => {
             {reportType === 'detailed-outcomes' && reportData.cases && (
               <div>
                 <h3 className="text-xl font-semibold mb-4">Case Outcomes Details ({reportData.cases.length} cases)</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="px-4 py-2 text-left">Owner</th>
-                        <th className="px-4 py-2 text-left">Pet</th>
-                        <th className="px-4 py-2 text-left">Species</th>
-                        <th className="px-4 py-2 text-left">Service</th>
-                        <th className="px-4 py-2 text-center">Status</th>
-                        <th className="px-4 py-2 text-left">Outcome</th>
-                        <th className="px-4 py-2 text-left">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reportData.cases.map((caseItem, idx) => (
-                        <tr key={idx} className="border-b hover:bg-gray-50">
-                          <td className="px-4 py-2">{caseItem.owner_name}</td>
-                          <td className="px-4 py-2">{caseItem.pet_name}</td>
-                          <td className="px-4 py-2">{caseItem.pet_species}</td>
-                          <td className="px-4 py-2">{caseItem.service_type}</td>
-                          <td className="px-4 py-2 text-center">
-                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                              caseItem.status === 'completed' ? 'bg-green-100 text-green-800' :
-                              caseItem.status === 'open' ? 'bg-blue-100 text-blue-800' :
-                              caseItem.status === 'on_hold' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {caseItem.status}
+                {reportData.cases.length === 0 ? (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded p-6 text-center">
+                    <p className="text-gray-700 mb-2">No cases with outcomes found for the selected date range.</p>
+                    <p className="text-sm text-gray-600">Edit existing cases to add outcome information for them to appear in this report.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-4 py-2 text-left">Owner</th>
+                          <th className="px-4 py-2 text-left">Pet</th>
+                          <th className="px-4 py-2 text-left">Species</th>
+                          <th className="px-4 py-2 text-left">Service</th>
+                          <th className="px-4 py-2 text-center">Status</th>
+                          <th className="px-4 py-2 text-left">Outcome</th>
+                          <th className="px-4 py-2 text-left">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reportData.cases.map((caseItem, idx) => (
+                          <tr key={idx} className="border-b hover:bg-gray-50">
+                            <td className="px-4 py-2">{caseItem.owner_name}</td>
+                            <td className="px-4 py-2">{caseItem.pet_name}</td>
+                            <td className="px-4 py-2">{caseItem.pet_species}</td>
+                            <td className="px-4 py-2">{caseItem.service_type}</td>
+                            <td className="px-4 py-2 text-center">
+                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                caseItem.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                caseItem.status === 'open' ? 'bg-blue-100 text-blue-800' :
+                                caseItem.status === 'on_hold' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {caseItem.status}
                             </span>
                           </td>
                           <td className="px-4 py-2 font-semibold">
@@ -384,6 +397,7 @@ export const ReportingPage = () => {
                     </tbody>
                   </table>
                 </div>
+              )}
               </div>
             )}
           </div>

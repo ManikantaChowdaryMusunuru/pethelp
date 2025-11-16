@@ -138,6 +138,9 @@ const initDatabase = () => {
     db.run(`ALTER TABLE cases ADD COLUMN owner_email TEXT`, () => {});
     db.run(`ALTER TABLE cases ADD COLUMN pet_name TEXT`, () => {});
     db.run(`ALTER TABLE cases ADD COLUMN pet_species TEXT`, () => {});
+    db.run(`ALTER TABLE cases ADD COLUMN source_system TEXT`, () => {});
+    db.run(`ALTER TABLE cases ADD COLUMN initial_request TEXT`, () => {});
+    db.run(`ALTER TABLE cases ADD COLUMN pet_details TEXT`, () => {});
     db.run(`ALTER TABLE cases ADD COLUMN breed TEXT`, () => {});
     db.run(`ALTER TABLE cases ADD COLUMN outcome TEXT`, () => {});
 
@@ -192,6 +195,12 @@ const initDatabase = () => {
       INSERT OR IGNORE INTO users (email, password_hash, name, role, is_active)
       VALUES (?, ?, ?, ?, ?)
     `, ['demo@jhs.org', 'demo123', 'Demo Staff', 'staff', 1]);
+
+    // Create admin user
+    db.run(`
+      INSERT OR IGNORE INTO users (email, password_hash, name, role, is_active)
+      VALUES (?, ?, ?, ?, ?)
+    `, ['admin@jhs.org', 'admin123', 'Admin User', 'admin', 1]);
 
     console.log('Database tables initialized');
   });
@@ -316,8 +325,8 @@ app.post('/api/cases', async (req, res) => {
 
     // Create case
     const caseRes = await dbRun(
-      'INSERT INTO cases (owner_id, pet_id, service_type, status) VALUES (?, ?, ?, ?)',
-      [owner.id, petId, service_type, 'New']
+      'INSERT INTO cases (owner_id, pet_id, pet_name, pet_species, service_type, status) VALUES (?, ?, ?, ?, ?, ?)',
+      [owner.id, petId, pet_name, pet_species || 'Unknown', service_type, 'New']
     );
 
     const newCase = await dbGet(
@@ -538,6 +547,21 @@ app.put('/api/cases/:id', async (req, res) => {
     if (notes) {
       updates.push('notes = ?');
       params.push(notes);
+    }
+
+    if (pet_name) {
+      updates.push('pet_name = ?');
+      params.push(pet_name);
+    }
+
+    if (pet_species) {
+      updates.push('pet_species = ?');
+      params.push(pet_species);
+    }
+
+    if (breed) {
+      updates.push('breed = ?');
+      params.push(breed);
     }
 
     updates.push('updated_at = CURRENT_TIMESTAMP');
@@ -780,6 +804,7 @@ app.post('/api/import/preview', upload.array('files'), async (req, res) => {
 
       try {
         let records = [];
+        let sourceSystem = 'manual';
         
         if (ext === '.csv') {
           const fileContent = readFileSync(filePath, 'utf-8');
@@ -787,10 +812,22 @@ app.post('/api/import/preview', upload.array('files'), async (req, res) => {
             columns: true,
             skip_empty_lines: true
           });
+          
+          // Detect source system from column names
+          if (records.length > 0) {
+            const columns = Object.keys(records[0]);
+            sourceSystem = detectSourceSystem(columns);
+          }
         } else if (ext === '.json') {
           const fileContent = readFileSync(filePath, 'utf-8');
           records = JSON.parse(fileContent);
           if (!Array.isArray(records)) records = [records];
+          
+          // Detect source system from first record
+          if (records.length > 0) {
+            const columns = Object.keys(records[0]);
+            sourceSystem = detectSourceSystem(columns);
+          }
         } else {
           previewData.push({
             fileName,
@@ -802,18 +839,24 @@ app.post('/api/import/preview', upload.array('files'), async (req, res) => {
           continue;
         }
 
-        // Normalize and validate records
-        const normalizedRecords = records.map((record, idx) => ({
-          ...record,
-          _index: idx,
-          _errors: validateCaseRecord(record)
-        }));
+        // Map source-specific fields to unified structure
+        const mappedRecords = records.map((record, idx) => {
+          const mapped = mapSourceToCaseFields(record, sourceSystem);
+          return {
+            ...mapped,
+            _originalData: record,
+            _index: idx,
+            _sourceSystem: sourceSystem,
+            _errors: validateCaseRecord(mapped)
+          };
+        });
 
         previewData.push({
           fileName,
-          status: normalizedRecords.some(r => r._errors.length > 0) ? 'warning' : 'ok',
-          recordCount: normalizedRecords.length,
-          records: normalizedRecords,
+          sourceSystem,
+          status: mappedRecords.some(r => r._errors.length > 0) ? 'warning' : 'ok',
+          recordCount: mappedRecords.length,
+          records: mappedRecords,
           _filePath: filePath
         });
       } catch (parseError) {
@@ -835,6 +878,65 @@ app.post('/api/import/preview', upload.array('files'), async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Map source-specific columns to unified case structure
+const mapSourceToCaseFields = (record, sourceSystem = 'manual') => {
+  const mapped = { source_system: sourceSystem };
+
+  // Voicemail CSV mapping
+  if (sourceSystem === 'voicemail') {
+    mapped.owner_name = record.caller_name || record.contact_name || '';
+    mapped.owner_phone = record.caller_phone || record.phone_number || '';
+    mapped.owner_email = record.email || record.caller_email || '';
+    mapped.initial_request = record.message_transcript || record.transcript || record.message || '';
+    mapped.pet_name = record.pet_name || 'Unknown';
+    mapped.pet_species = record.pet_type || record.pet_species || 'Unknown';
+    mapped.service_type = record.service_type || 'other';
+    mapped.status = record.status || 'open';
+    mapped.notes = `Voicemail received: ${record.timestamp || new Date().toISOString()}`;
+  }
+  // WaitWhile CSV mapping
+  else if (sourceSystem === 'waitwhile') {
+    mapped.owner_name = record.full_name || record.contact_name || record.name || '';
+    mapped.owner_phone = record.phone || record.phone_number || '';
+    mapped.owner_email = record.email || '';
+    mapped.pet_name = record.pet_name || 'Unknown';
+    mapped.pet_species = record.pet_type || record.pet_species || 'Unknown';
+    mapped.pet_details = `${record.pet_type || ''} - ${record.pet_name || ''}`.trim();
+    mapped.initial_request = record.reason_for_visit || record.reason || '';
+    mapped.service_type = record.service_type || 'other';
+    mapped.status = record.status || 'open';
+    mapped.notes = `Walk-in check-in: ${record.check_in_time || record.timestamp || new Date().toISOString()}`;
+  }
+  // Standard/manual import
+  else {
+    mapped.owner_name = record.owner_name || record.contact_name || '';
+    mapped.owner_phone = record.owner_phone || record.phone_number || record.phone || '';
+    mapped.owner_email = record.owner_email || record.email || '';
+    mapped.pet_name = record.pet_name || '';
+    mapped.pet_species = record.pet_species || record.pet_type || '';
+    mapped.pet_details = record.pet_details || '';
+    mapped.initial_request = record.initial_request || record.notes || '';
+    mapped.service_type = record.service_type || '';
+    mapped.status = record.status || 'open';
+    mapped.notes = record.notes || '';
+  }
+
+  return mapped;
+};
+
+// Detect source system from column names
+const detectSourceSystem = (columns) => {
+  const colSet = new Set(columns.map(c => c.toLowerCase()));
+  
+  if (colSet.has('caller_name') || colSet.has('caller_phone') || colSet.has('message_transcript')) {
+    return 'voicemail';
+  }
+  if (colSet.has('full_name') || colSet.has('reason_for_visit') || colSet.has('check_in_time')) {
+    return 'waitwhile';
+  }
+  return 'manual';
+};
 
 // Validate case record with detailed error messages
 const validateCaseRecord = (record) => {
@@ -966,14 +1068,24 @@ app.post('/api/import/confirm', async (req, res) => {
         // Create case
         await dbRun(
           `INSERT INTO cases (
-            owner_id, pet_id, service_type, status, notes, created_at, updated_at, is_deleted
-          ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)`,
+            owner_id, pet_id, pet_name, pet_species, service_type, status, notes, 
+            source_system, initial_request, pet_details, owner_name, owner_phone, owner_email,
+            created_at, updated_at, is_deleted
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)`,
           [
             ownerRow.id,
             petId,
+            record.pet_name || '',
+            record.pet_species || 'Unknown',
             record.service_type || '',
-            record.status || 'New',
-            record.notes || ''
+            record.status || 'open',
+            record.notes || '',
+            record.source_system || record._sourceSystem || 'manual',
+            record.initial_request || '',
+            record.pet_details || '',
+            record.owner_name || '',
+            record.owner_phone || '',
+            record.owner_email || ''
           ]
         );
 
