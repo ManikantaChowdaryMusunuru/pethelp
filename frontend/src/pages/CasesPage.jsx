@@ -60,6 +60,12 @@ export const CasesPage = () => {
           <h2 className="text-3xl font-bold text-gray-800">Active Cases</h2>
           <div className="flex gap-3">
             <Link
+              to="/import"
+              className="bg-blue-800 hover:bg-blue-900 text-white px-6 py-2 rounded-lg font-semibold transition"
+            >
+              📥 Import Data
+            </Link>
+            <Link
               to="/deleted"
               className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-semibold transition"
             >

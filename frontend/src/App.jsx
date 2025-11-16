@@ -8,6 +8,7 @@ import { CreateCasePage } from './pages/CreateCasePage';
 import { CaseDetailPage } from './pages/CaseDetailPage';
 import { EditCasePage } from './pages/EditCasePage';
 import { DeletedCasesPage } from './pages/DeletedCasesPage';
+import { DataImportPage } from './pages/DataImportPage';
 import SearchPage from './pages/SearchPage';
 
 function AppRoutes() {
@@ -61,6 +62,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <EditCasePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/import"
+        element={
+          <ProtectedRoute>
+            <DataImportPage />
           </ProtectedRoute>
         }
       />

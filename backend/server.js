@@ -6,6 +6,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import dotenv from 'dotenv';
+import { parse } from 'csv-parse/sync';
+import { readFileSync } from 'fs';
 
 dotenv.config();
 
@@ -666,6 +668,187 @@ app.get('/api/dashboard/metrics', async (req, res) => {
         return acc;
       }, {}),
       recent_cases: recentCases
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== BULK DATA IMPORT =====
+app.post('/api/import/preview', upload.array('files'), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const previewData = [];
+
+    for (const file of req.files) {
+      const filePath = file.path;
+      const fileName = file.originalname;
+      const ext = path.extname(fileName).toLowerCase();
+
+      try {
+        let records = [];
+        
+        if (ext === '.csv') {
+          const fileContent = readFileSync(filePath, 'utf-8');
+          records = parse(fileContent, {
+            columns: true,
+            skip_empty_lines: true
+          });
+        } else if (ext === '.json') {
+          const fileContent = readFileSync(filePath, 'utf-8');
+          records = JSON.parse(fileContent);
+          if (!Array.isArray(records)) records = [records];
+        } else {
+          previewData.push({
+            fileName,
+            status: 'error',
+            error: 'Unsupported file format. Only CSV and JSON are supported.',
+            records: []
+          });
+          fs.unlinkSync(filePath);
+          continue;
+        }
+
+        // Normalize and validate records
+        const normalizedRecords = records.map((record, idx) => ({
+          ...record,
+          _index: idx,
+          _errors: validateCaseRecord(record)
+        }));
+
+        previewData.push({
+          fileName,
+          status: normalizedRecords.some(r => r._errors.length > 0) ? 'warning' : 'ok',
+          recordCount: normalizedRecords.length,
+          records: normalizedRecords,
+          _filePath: filePath
+        });
+      } catch (parseError) {
+        previewData.push({
+          fileName,
+          status: 'error',
+          error: parseError.message,
+          records: []
+        });
+        fs.unlinkSync(filePath);
+      }
+    }
+
+    res.json({
+      previewData,
+      totalRecords: previewData.reduce((sum, f) => sum + (f.records?.length || 0), 0)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Validate case record
+const validateCaseRecord = (record) => {
+  const errors = [];
+  
+  // Required fields
+  const required = ['owner_name', 'owner_phone', 'pet_name', 'service_type'];
+  required.forEach(field => {
+    if (!record[field] || !String(record[field]).trim()) {
+      errors.push(`Missing required field: ${field}`);
+    }
+  });
+
+  // Validate phone format (basic)
+  if (record.owner_phone) {
+    const phoneStr = String(record.owner_phone).trim();
+    if (phoneStr.length < 7) {
+      errors.push('Invalid phone number (too short)');
+    }
+  }
+
+  return errors;
+};
+
+// Confirm import
+app.post('/api/import/confirm', async (req, res) => {
+  try {
+    const { records, fileNames } = req.body;
+
+    if (!records || records.length === 0) {
+      return res.status(400).json({ error: 'No records to import' });
+    }
+
+    let importedCount = 0;
+    const errors = [];
+
+    for (const record of records) {
+      try {
+        // Skip records with errors
+        if (record._errors && record._errors.length > 0) {
+          errors.push(`Row ${record._index + 1}: ${record._errors.join(', ')}`);
+          continue;
+        }
+
+        // Create owner
+        const ownerResult = await dbRun(
+          `INSERT OR IGNORE INTO owners (name, phone, email) VALUES (?, ?, ?)`,
+          [
+            record.owner_name || '',
+            record.owner_phone || '',
+            record.owner_email || ''
+          ]
+        );
+
+        const ownerRow = await dbGet(
+          `SELECT id FROM owners WHERE phone = ? OR name = ?`,
+          [record.owner_phone || '', record.owner_name || '']
+        );
+
+        if (!ownerRow) {
+          errors.push(`Row ${record._index + 1}: Failed to create/find owner`);
+          continue;
+        }
+
+        // Create pet if details provided
+        let petId = null;
+        if (record.pet_name) {
+          const petResult = await dbRun(
+            `INSERT INTO pets (name, species, breed, owner_id) VALUES (?, ?, ?, ?)`,
+            [
+              record.pet_name,
+              record.pet_species || 'Unknown',
+              record.breed || '',
+              ownerRow.id
+            ]
+          );
+          petId = petResult.id;
+        }
+
+        // Create case
+        await dbRun(
+          `INSERT INTO cases (
+            owner_id, pet_id, service_type, status, notes, created_at, updated_at, is_deleted
+          ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)`,
+          [
+            ownerRow.id,
+            petId,
+            record.service_type || '',
+            record.status || 'New',
+            record.notes || ''
+          ]
+        );
+
+        importedCount++;
+      } catch (recordError) {
+        errors.push(`Row ${record._index + 1}: ${recordError.message}`);
+      }
+    }
+
+    res.json({
+      importedCount,
+      totalRecords: records.length,
+      errors: errors.length > 0 ? errors : undefined,
+      message: `Successfully imported ${importedCount} cases`
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
