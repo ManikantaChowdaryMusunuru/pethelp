@@ -842,12 +842,13 @@ app.post('/api/import/preview', upload.array('files'), async (req, res) => {
         // Map source-specific fields to unified structure
         const mappedRecords = records.map((record, idx) => {
           const mapped = mapSourceToCaseFields(record, sourceSystem);
+          const validationErrors = validateCaseRecord(mapped);
           return {
             ...mapped,
             _originalData: record,
             _index: idx,
             _sourceSystem: sourceSystem,
-            _errors: validateCaseRecord(mapped)
+            _errors: validationErrors.map(err => String(err)) // Ensure all errors are strings
           };
         });
 
@@ -1011,100 +1012,7 @@ const validateCaseRecord = (record) => {
 };
 
 // Confirm import
-app.post('/api/import/confirm', async (req, res) => {
-  try {
-    const { records, fileNames } = req.body;
 
-    if (!records || records.length === 0) {
-      return res.status(400).json({ error: 'No records to import' });
-    }
-
-    let importedCount = 0;
-    const errors = [];
-
-    for (const record of records) {
-      try {
-        // Skip records with errors
-        if (record._errors && record._errors.length > 0) {
-          errors.push(`Row ${record._index + 1}: ${record._errors.join(', ')}`);
-          continue;
-        }
-
-        // Create owner
-        const ownerResult = await dbRun(
-          `INSERT OR IGNORE INTO owners (name, phone, email) VALUES (?, ?, ?)`,
-          [
-            record.owner_name || '',
-            record.owner_phone || '',
-            record.owner_email || ''
-          ]
-        );
-
-        const ownerRow = await dbGet(
-          `SELECT id FROM owners WHERE phone = ? OR name = ?`,
-          [record.owner_phone || '', record.owner_name || '']
-        );
-
-        if (!ownerRow) {
-          errors.push(`Row ${record._index + 1}: Failed to create/find owner`);
-          continue;
-        }
-
-        // Create pet if details provided
-        let petId = null;
-        if (record.pet_name) {
-          const petResult = await dbRun(
-            `INSERT INTO pets (name, species, breed, owner_id) VALUES (?, ?, ?, ?)`,
-            [
-              record.pet_name,
-              record.pet_species || 'Unknown',
-              record.breed || '',
-              ownerRow.id
-            ]
-          );
-          petId = petResult.id;
-        }
-
-        // Create case
-        await dbRun(
-          `INSERT INTO cases (
-            owner_id, pet_id, pet_name, pet_species, service_type, status, notes, 
-            source_system, initial_request, pet_details, owner_name, owner_phone, owner_email,
-            created_at, updated_at, is_deleted
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)`,
-          [
-            ownerRow.id,
-            petId,
-            record.pet_name || '',
-            record.pet_species || 'Unknown',
-            record.service_type || '',
-            record.status || 'open',
-            record.notes || '',
-            record.source_system || record._sourceSystem || 'manual',
-            record.initial_request || '',
-            record.pet_details || '',
-            record.owner_name || '',
-            record.owner_phone || '',
-            record.owner_email || ''
-          ]
-        );
-
-        importedCount++;
-      } catch (recordError) {
-        errors.push(`Row ${record._index + 1}: ${recordError.message}`);
-      }
-    }
-
-    res.json({
-      importedCount,
-      totalRecords: records.length,
-      errors: errors.length > 0 ? errors : undefined,
-      message: `Successfully imported ${importedCount} cases`
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ===== IMPORT CONFIRMATION ENDPOINT =====
 app.post('/api/import/confirm', async (req, res) => {
@@ -1121,22 +1029,64 @@ app.post('/api/import/confirm', async (req, res) => {
     for (let idx = 0; idx < importData.length; idx++) {
       const item = importData[idx];
       try {
-        await dbRun(
-          `INSERT INTO cases (owner_name, owner_phone, owner_email, pet_name, pet_species, breed, service_type, status, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'open', datetime('now'))`,
+        // Create or get owner
+        const ownerResult = await dbRun(
+          `INSERT OR IGNORE INTO owners (name, phone, email) VALUES (?, ?, ?)`,
           [
-            item.contact_name || '',
-            item.phone_number || '',
-            item.email || '',
+            item.owner_name || '',
+            item.owner_phone || '',
+            item.owner_email || ''
+          ]
+        );
+
+        const ownerRow = await dbGet(
+          `SELECT id FROM owners WHERE phone = ? OR name = ?`,
+          [item.owner_phone || '', item.owner_name || '']
+        );
+
+        if (!ownerRow) {
+          errors.push({ index: idx, record: item, error: 'Failed to create/find owner' });
+          continue;
+        }
+
+        // Create pet if details provided
+        let petId = null;
+        if (item.pet_name) {
+          const petResult = await dbRun(
+            `INSERT INTO pets (name, species, breed, owner_id) VALUES (?, ?, ?, ?)`,
+            [
+              item.pet_name,
+              item.pet_species || 'Unknown',
+              item.breed || '',
+              ownerRow.id
+            ]
+          );
+          petId = petResult.id;
+        }
+
+        // Create case
+        await dbRun(
+          `INSERT INTO cases (
+            owner_id, pet_id, owner_name, owner_phone, owner_email, 
+            pet_name, pet_species, breed, service_type, status, 
+            source_system, notes, created_at, updated_at, is_deleted
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)`,
+          [
+            ownerRow.id,
+            petId,
+            item.owner_name || '',
+            item.owner_phone || '',
+            item.owner_email || '',
             item.pet_name || '',
-            item.pet_species || item.species || '',
+            item.pet_species || 'Unknown',
             item.breed || '',
-            item.service_type || ''
+            item.service_type || 'other',
+            item.source_system || 'manual'
           ]
         );
         importedCount++;
       } catch (err) {
-        errors.push({ index: idx, record: item, error: err.message });
+        errors.push({ index: idx, record: item, error: String(err.message || err) });
       }
     }
 
@@ -1147,7 +1097,7 @@ app.post('/api/import/confirm', async (req, res) => {
       message: `Successfully imported ${importedCount} cases`
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: String(err.message || err) });
   }
 });
 

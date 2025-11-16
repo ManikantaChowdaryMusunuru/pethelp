@@ -102,7 +102,10 @@ export const DataImportPage = () => {
       alert(`✅ Successfully imported ${response.data.importedCount} cases!`);
       
       if (response.data.errors && response.data.errors.length > 0) {
-        alert(`⚠️ Some records had errors:\n${response.data.errors.slice(0, 5).join('\n')}`);
+        const errorMessages = response.data.errors.slice(0, 5).map(err => 
+          `Row ${err.index + 1}: ${err.error}`
+        ).join('\n');
+        alert(`⚠️ Some records had errors:\n${errorMessages}`);
       }
       
       setPreviewData(null);
