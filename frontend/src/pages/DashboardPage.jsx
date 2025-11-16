@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -229,6 +231,14 @@ export function DashboardPage() {
               >
                 🔍 Search Cases
               </button>
+              {user?.role === 'admin' && (
+                <Link
+                  to="/admin"
+                  className="w-full block text-center bg-red-700 hover:bg-red-800 text-white px-4 py-3 rounded-lg font-semibold transition"
+                >
+                  👨‍💼 Admin Panel
+                </Link>
+              )}
             </div>
           </div>
         </div>

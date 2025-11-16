@@ -964,6 +964,109 @@ app.get('/api/dashboard/stats', (req, res) => {
   }
 });
 
+// ===== USER MANAGEMENT (Admin Only) =====
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const userRole = req.query.userRole || 'staff'; // Check auth in production
+    
+    // In production, verify userRole is 'admin'
+    const users = await dbAll('SELECT id, email, name, role, created_at FROM users ORDER BY created_at DESC', []);
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/users', async (req, res) => {
+  try {
+    const { email, name, role } = req.body;
+    
+    if (!email || !name || !role) {
+      return res.status(400).json({ error: 'Missing required fields: email, name, role' });
+    }
+    
+    if (!['admin', 'staff'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Must be admin or staff' });
+    }
+    
+    // Default password is email for new users
+    const defaultPassword = email;
+    
+    await dbRun(
+      'INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)',
+      [email, defaultPassword, name, role]
+    );
+    
+    res.json({ success: true, message: `User ${email} created with role ${role}` });
+  } catch (err) {
+    if (err.message.includes('UNIQUE')) {
+      res.status(400).json({ error: 'Email already exists' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+app.put('/api/admin/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role, is_active } = req.body;
+    
+    if (!['admin', 'staff'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+    
+    await dbRun(
+      'UPDATE users SET role = ? WHERE id = ?',
+      [role, id]
+    );
+    
+    res.json({ success: true, message: `User updated to role ${role}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Prevent deleting the demo user or last admin
+    const user = await dbGet('SELECT role FROM users WHERE id = ?', [id]);
+    
+    if (user.role === 'admin') {
+      const adminCount = await dbGet('SELECT COUNT(*) as count FROM users WHERE role = "admin"', []);
+      if (adminCount.count <= 1) {
+        return res.status(400).json({ error: 'Cannot delete the last admin user' });
+      }
+    }
+    
+    await dbRun('DELETE FROM users WHERE id = ?', [id]);
+    res.json({ success: true, message: 'User deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/users/:id/reset-password', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await dbGet('SELECT email FROM users WHERE id = ?', [id]);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Reset password to email
+    const resetPassword = user.email;
+    await dbRun('UPDATE users SET password_hash = ? WHERE id = ?', [resetPassword, id]);
+    
+    res.json({ success: true, message: `Password reset for ${user.email}. New password: ${resetPassword}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ===== HEALTH CHECK =====
 app.get('/health', (req, res) => {
   res.json({

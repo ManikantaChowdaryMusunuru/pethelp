@@ -10,6 +10,7 @@ import { CaseDetailPage } from './pages/CaseDetailPage';
 import { EditCasePage } from './pages/EditCasePage';
 import { DeletedCasesPage } from './pages/DeletedCasesPage';
 import { DataImportPage } from './pages/DataImportPage';
+import { AdminPanelPage } from './pages/AdminPanelPage';
 import SearchPage from './pages/SearchPage';
 
 function AppRoutes() {
@@ -79,6 +80,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <DataImportPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <AdminPanelPage />
           </ProtectedRoute>
         }
       />
