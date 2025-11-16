@@ -83,9 +83,9 @@ export const DataImportPage = () => {
     }
 
     const allRecords = recordsToImport
-      .filter(r => !r._originalErrors || r._originalErrors.length === 0)
+      .filter(r => !r._hasErrors)
       .map(r => {
-        const { _index, _errors, _originalErrors, _edited, ...cleaned } = r;
+        const { _index, _errors, _originalErrors, _edited, _newErrors, _hasErrors, ...cleaned } = r;
         return cleaned;
       });
     
@@ -270,6 +270,55 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
 
   const hasChanges = Object.keys(editingRecords).length > 0;
 
+  // Validate individual field values
+  const validateEditedField = (fieldName, value) => {
+    if (!value || !String(value).trim()) {
+      if (['owner_name', 'owner_phone', 'pet_name', 'service_type'].includes(fieldName)) {
+        return `${fieldName} is required`;
+      }
+    }
+    
+    if (fieldName === 'owner_phone' && value) {
+      const phoneDigits = String(value).replace(/\D/g, '');
+      if (phoneDigits.length < 7) {
+        return `Phone must have at least 7 digits`;
+      }
+    }
+
+    if (fieldName === 'owner_email' && value) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(String(value))) {
+        return `Invalid email format`;
+      }
+    }
+
+    return null;
+  };
+
+  // Re-validate record after edits
+  const validateRecord = (record) => {
+    const errors = [];
+    const requiredFields = ['owner_name', 'owner_phone', 'pet_name', 'service_type'];
+    
+    requiredFields.forEach(field => {
+      const fieldError = validateEditedField(field, record[field]);
+      if (fieldError) {
+        errors.push(fieldError);
+      }
+    });
+
+    // Validate optional fields if they have values
+    const optionalValidations = {
+      owner_email: validateEditedField('owner_email', record.owner_email)
+    };
+
+    Object.values(optionalValidations).forEach(error => {
+      if (error) errors.push(error);
+    });
+
+    return errors;
+  };
+
   const getRecordsToImport = () => {
     const allRecords = previewData.previewData.flatMap((fileData, fileIdx) =>
       (fileData.records || []).map((record, recordIdx) => ({
@@ -284,16 +333,25 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
       .filter(({ record }) => !filterErrors || (record._errors && record._errors.length > 0))
       .map(({ record, key }) => {
         const edited = editingRecords[key] || {};
-        return {
+        const mergedRecord = {
           ...record,
-          ...edited,
+          ...edited
+        };
+        
+        // Re-validate the merged record
+        const newErrors = validateRecord(mergedRecord);
+        
+        return {
+          ...mergedRecord,
           _originalErrors: record._errors,
+          _newErrors: newErrors,
+          _hasErrors: newErrors.length > 0,
           _edited: Object.keys(edited).length > 0
         };
       });
   };
 
-  const canImport = getRecordsToImport().some(r => !r._originalErrors || r._originalErrors.length === 0);
+  const canImport = getRecordsToImport().some(r => !r._hasErrors);
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -348,8 +406,9 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
           getRecordsToImport().map((record, idx) => {
             const rowKey = `${idx}`;
             const isExpanded = expandedRows[rowKey];
-            const hasErrors = record._originalErrors && record._originalErrors.length > 0;
+            const hasErrors = record._hasErrors;
             const isEdited = record._edited;
+            const allErrors = record._newErrors || [];
 
             return (
               <div key={idx} className={`border rounded p-3 ${hasErrors ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white'}`}>
@@ -374,7 +433,7 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
                   <div className="flex items-center gap-2">
                     {hasErrors && (
                       <span className="text-xs bg-red-600 text-white px-2 py-1 rounded font-semibold">
-                        {record._originalErrors.length} issue{record._originalErrors.length !== 1 ? 's' : ''}
+                        {allErrors.length} issue{allErrors.length !== 1 ? 's' : ''}
                       </span>
                     )}
                     {!hasErrors && (
@@ -496,11 +555,11 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
                     </div>
 
                     {/* Errors */}
-                    {hasErrors && (
+                    {hasErrors && allErrors.length > 0 && (
                       <div className="mt-4 bg-red-50 border-l-4 border-red-500 p-3 rounded">
                         <p className="text-sm font-semibold text-red-800 mb-2">Validation Issues:</p>
                         <div className="space-y-1">
-                          {record._originalErrors.map((error, errIdx) => (
+                          {allErrors.map((error, errIdx) => (
                             <div key={errIdx} className="flex items-start gap-2 text-sm text-red-700">
                               <span className="font-bold mt-0.5">•</span>
                               <span>{error}</span>
@@ -532,7 +591,7 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
           className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded-lg transition"
           title={!canImport ? "No valid records to import" : ""}
         >
-          {loading ? 'Importing...' : `✅ Import ${getRecordsToImport().filter(r => !r._originalErrors || r._originalErrors.length === 0).length} Valid Records`}
+          {loading ? 'Importing...' : `✅ Import ${getRecordsToImport().filter(r => !r._hasErrors).length} Valid Records`}
         </button>
       </div>
     </div>
