@@ -11,6 +11,7 @@ import { EditCasePage } from './pages/EditCasePage';
 import { DeletedCasesPage } from './pages/DeletedCasesPage';
 import { DataImportPage } from './pages/DataImportPage';
 import { AdminPanelPage } from './pages/AdminPanelPage';
+import { ReportingPage } from './pages/ReportingPage';
 import SearchPage from './pages/SearchPage';
 
 function AppRoutes() {
@@ -88,6 +89,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <AdminPanelPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reports"
+        element={
+          <ProtectedRoute>
+            <ReportingPage />
           </ProtectedRoute>
         }
       />

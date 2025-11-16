@@ -119,6 +119,7 @@ const initDatabase = () => {
     db.run(`ALTER TABLE cases ADD COLUMN pet_name TEXT`, () => {});
     db.run(`ALTER TABLE cases ADD COLUMN pet_species TEXT`, () => {});
     db.run(`ALTER TABLE cases ADD COLUMN breed TEXT`, () => {});
+    db.run(`ALTER TABLE cases ADD COLUMN outcome TEXT`, () => {});
 
     // Case notes table
     db.run(`
@@ -483,7 +484,7 @@ app.get('/api/cases/deleted/list', async (req, res) => {
 
 app.put('/api/cases/:id', async (req, res) => {
   try {
-    const { status, notes, owner_name, owner_phone, owner_email, pet_name, pet_species, breed, service_type } = req.body;
+    const { status, notes, owner_name, owner_phone, owner_email, pet_name, pet_species, breed, service_type, outcome } = req.body;
     const updates = [];
     const params = [];
 
@@ -491,7 +492,7 @@ app.put('/api/cases/:id', async (req, res) => {
     if (status) {
       updates.push('status = ?');
       params.push(status);
-      if (status === 'Closed') {
+      if (status === 'Closed' || status === 'completed') {
         updates.push('closed_at = CURRENT_TIMESTAMP');
       }
     }
@@ -499,6 +500,11 @@ app.put('/api/cases/:id', async (req, res) => {
     if (service_type) {
       updates.push('service_type = ?');
       params.push(service_type);
+    }
+
+    if (outcome) {
+      updates.push('outcome = ?');
+      params.push(outcome);
     }
 
     if (notes) {
@@ -1161,6 +1167,204 @@ app.post('/api/admin/users/:id/reset-password', async (req, res) => {
     await dbRun('UPDATE users SET password_hash = ? WHERE id = ?', [resetPassword, id]);
     
     res.json({ success: true, message: `Password reset for ${user.email}. New password: ${resetPassword}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== REPORTING & ANALYTICS =====
+
+// Get case outcomes report
+app.get('/api/reports/case-outcomes', async (req, res) => {
+  try {
+    const { startDate, endDate, serviceType } = req.query;
+
+    let query = `
+      SELECT 
+        outcome,
+        COUNT(*) as count,
+        ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM cases WHERE is_deleted = 0), 2) as percentage
+      FROM cases
+      WHERE is_deleted = 0 AND outcome IS NOT NULL AND outcome != ''
+    `;
+
+    const params = [];
+
+    if (startDate) {
+      query += ` AND created_at >= ?`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      query += ` AND created_at <= ?`;
+      params.push(endDate);
+    }
+
+    if (serviceType) {
+      query += ` AND service_type = ?`;
+      params.push(serviceType);
+    }
+
+    query += ` GROUP BY outcome ORDER BY count DESC`;
+
+    db.all(query, params, (err, rows) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      res.json({ outcomes: rows || [] });
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get program effectiveness summary
+app.get('/api/reports/program-effectiveness', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    let dateFilter = `WHERE cases.is_deleted = 0`;
+    const params = [];
+
+    if (startDate) {
+      dateFilter += ` AND cases.created_at >= ?`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      dateFilter += ` AND cases.created_at <= ?`;
+      params.push(endDate);
+    }
+
+    // Total cases
+    db.get(
+      `SELECT COUNT(*) as total FROM cases ${dateFilter}`,
+      params,
+      (err, totalRow) => {
+        if (err) {
+          return res.status(500).json({ error: err.message });
+        }
+
+        // Cases by service type
+        db.all(
+          `SELECT service_type, COUNT(*) as count FROM cases ${dateFilter} GROUP BY service_type`,
+          params,
+          (err, serviceRows) => {
+            if (err) {
+              return res.status(500).json({ error: err.message });
+            }
+
+            // Outcomes breakdown
+            db.all(
+              `SELECT outcome, COUNT(*) as count FROM cases ${dateFilter} AND outcome IS NOT NULL GROUP BY outcome`,
+              params,
+              (err, outcomeRows) => {
+                if (err) {
+                  return res.status(500).json({ error: err.message });
+                }
+
+                res.json({
+                  totalCases: totalRow?.total || 0,
+                  casesByService: serviceRows || [],
+                  outcomeBreakdown: outcomeRows || [],
+                  generatedAt: new Date().toISOString()
+                });
+              }
+            );
+          }
+        );
+      }
+    );
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get detailed case outcomes with case information
+app.get('/api/reports/case-outcomes-detailed', async (req, res) => {
+  try {
+    const { startDate, endDate, outcome } = req.query;
+
+    let query = `
+      SELECT 
+        cases.id,
+        cases.owner_name,
+        cases.pet_name,
+        cases.pet_species,
+        cases.service_type,
+        cases.status,
+        cases.outcome,
+        cases.created_at,
+        cases.closed_at
+      FROM cases
+      WHERE cases.is_deleted = 0 AND cases.outcome IS NOT NULL
+    `;
+
+    const params = [];
+
+    if (startDate) {
+      query += ` AND cases.created_at >= ?`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      query += ` AND cases.created_at <= ?`;
+      params.push(endDate);
+    }
+
+    if (outcome) {
+      query += ` AND cases.outcome = ?`;
+      params.push(outcome);
+    }
+
+    query += ` ORDER BY cases.created_at DESC LIMIT 1000`;
+
+    db.all(query, params, (err, rows) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      res.json({ cases: rows || [] });
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get species analysis report
+app.get('/api/reports/species-analysis', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    let query = `
+      SELECT 
+        pet_species,
+        COUNT(*) as count,
+        COUNT(CASE WHEN outcome IS NOT NULL THEN 1 END) as outcomes_recorded,
+        COUNT(DISTINCT service_type) as service_types
+      FROM cases
+      WHERE is_deleted = 0
+    `;
+
+    const params = [];
+
+    if (startDate) {
+      query += ` AND created_at >= ?`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      query += ` AND created_at <= ?`;
+      params.push(endDate);
+    }
+
+    query += ` GROUP BY pet_species ORDER BY count DESC`;
+
+    db.all(query, params, (err, rows) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      res.json({ species: rows || [] });
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

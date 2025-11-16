@@ -231,6 +231,12 @@ export function DashboardPage() {
               >
                 🔍 Search Cases
               </button>
+              <button
+                onClick={() => navigate('/reports')}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-lg font-semibold transition text-left"
+              >
+                📊 Reports & Analytics
+              </button>
               {user?.role === 'admin' && (
                 <Link
                   to="/admin"

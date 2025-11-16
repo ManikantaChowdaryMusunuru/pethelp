@@ -21,7 +21,8 @@ export const EditCasePage = () => {
     pet_species: '',
     breed: '',
     service_type: '',
-    status: ''
+    status: '',
+    outcome: ''
   });
 
   const fetchCase = async () => {
@@ -36,7 +37,8 @@ export const EditCasePage = () => {
         pet_species: response.data.pet_species || '',
         breed: response.data.breed || '',
         service_type: response.data.service_type || '',
-        status: response.data.status || ''
+        status: response.data.status || '',
+        outcome: response.data.outcome || ''
       });
       setLoading(false);
     } catch (err) {
@@ -113,7 +115,7 @@ export const EditCasePage = () => {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Status and Service Type */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Status
@@ -143,6 +145,27 @@ export const EditCasePage = () => {
                   placeholder="e.g., Lost Pet Recovery"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Outcome
+                </label>
+                <select
+                  name="outcome"
+                  value={formData.outcome}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select outcome (optional)</option>
+                  <option value="Pet kept in home">Pet kept in home</option>
+                  <option value="Surrendered">Surrendered</option>
+                  <option value="Referred to Vet">Referred to Vet</option>
+                  <option value="Rehomed">Rehomed</option>
+                  <option value="Lost">Lost</option>
+                  <option value="Deceased">Deceased</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
             </div>
 
