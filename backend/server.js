@@ -34,6 +34,12 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 });
 
+// Database setup
+const db = new sqlite3.Database(process.env.DATABASE_PATH || './phcs.db', (err) => {
+  if (err) console.error('Database error:', err);
+  else console.log('Connected to SQLite database');
+});
+
 // Authentication middleware
 const requireRole = (role) => {
   return (req, res, next) => {
