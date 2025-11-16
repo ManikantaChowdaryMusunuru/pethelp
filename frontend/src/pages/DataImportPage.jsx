@@ -76,19 +76,21 @@ export const DataImportPage = () => {
     }
   };
 
-  const handleConfirmImport = async () => {
-    if (!previewData) return;
+  const handleConfirmImport = async (recordsToImport) => {
+    if (!recordsToImport || recordsToImport.length === 0) {
+      setError('No valid records to import');
+      return;
+    }
 
-    const allRecords = previewData.previewData
-      .flatMap(f => f.records || [])
-      .filter(r => !r._errors || r._errors.length === 0)
+    const allRecords = recordsToImport
+      .filter(r => !r._originalErrors || r._originalErrors.length === 0)
       .map(r => {
-        const { _index, _errors, ...cleaned } = r;
+        const { _index, _errors, _originalErrors, _edited, ...cleaned } = r;
         return cleaned;
       });
     
     if (allRecords.length === 0) {
-      setError('No valid records to import. Please fix errors in preview.');
+      setError('No valid records to import. Please fix errors or select different records.');
       return;
     }
 
@@ -100,7 +102,7 @@ export const DataImportPage = () => {
       alert(`✅ Successfully imported ${response.data.importedCount} cases!`);
       
       if (response.data.errors && response.data.errors.length > 0) {
-        alert(`⚠️ Some records had errors:\n${response.data.errors.slice(0, 5).map(e => `${e.index}: ${e.error}`).join('\n')}`);
+        alert(`⚠️ Some records had errors:\n${response.data.errors.slice(0, 5).join('\n')}`);
       }
       
       setPreviewData(null);
@@ -237,11 +239,14 @@ export const DataImportPage = () => {
 
 const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
   const [editingRecords, setEditingRecords] = useState({});
+  const [expandedRows, setExpandedRows] = useState({});
+  const [filterErrors, setFilterErrors] = useState(false);
 
   const totalRecords = previewData.previewData.reduce((sum, f) => sum + (f.records?.length || 0), 0);
   const recordsWithErrors = previewData.previewData.flatMap(f =>
     (f.records || []).filter(r => r._errors && r._errors.length > 0)
   );
+  const validRecords = totalRecords - recordsWithErrors.length;
 
   const handleEditField = (fileIdx, recordIdx, field, value) => {
     const key = `${fileIdx}-${recordIdx}`;
@@ -256,105 +261,264 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
     return editingRecords[key]?.[field] ?? originalValue;
   };
 
+  const toggleRowExpand = (key) => {
+    setExpandedRows(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  const hasChanges = Object.keys(editingRecords).length > 0;
+
+  const getRecordsToImport = () => {
+    const allRecords = previewData.previewData.flatMap((fileData, fileIdx) =>
+      (fileData.records || []).map((record, recordIdx) => ({
+        record,
+        fileIdx,
+        recordIdx,
+        key: `${fileIdx}-${recordIdx}`
+      }))
+    );
+
+    return allRecords
+      .filter(({ record }) => !filterErrors || (record._errors && record._errors.length > 0))
+      .map(({ record, key }) => {
+        const edited = editingRecords[key] || {};
+        return {
+          ...record,
+          ...edited,
+          _originalErrors: record._errors,
+          _edited: Object.keys(edited).length > 0
+        };
+      });
+  };
+
+  const canImport = getRecordsToImport().some(r => !r._originalErrors || r._originalErrors.length === 0);
+
   return (
     <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-2xl font-bold mb-4">Preview & Edit Data</h2>
+      <h2 className="text-2xl font-bold mb-2">Review & Edit Imported Data</h2>
+      <p className="text-gray-600 mb-6">Edit any fields before committing. Invalid records will be skipped during import.</p>
 
-      <div className="mb-6 grid grid-cols-3 gap-4">
+      {/* Statistics Cards */}
+      <div className="mb-6 grid grid-cols-4 gap-4">
         <div className="bg-blue-50 p-4 rounded">
           <p className="text-sm text-gray-600">Total Records</p>
           <p className="text-2xl font-bold text-blue-600">{totalRecords}</p>
         </div>
-        <div className={`p-4 rounded ${recordsWithErrors.length > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+        <div className="bg-green-50 p-4 rounded">
+          <p className="text-sm text-gray-600">Valid Records</p>
+          <p className="text-2xl font-bold text-green-600">{validRecords}</p>
+        </div>
+        <div className={`p-4 rounded ${recordsWithErrors.length > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
           <p className="text-sm text-gray-600">Records with Issues</p>
-          <p className={`text-2xl font-bold ${recordsWithErrors.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
+          <p className={`text-2xl font-bold ${recordsWithErrors.length > 0 ? 'text-red-600' : 'text-gray-600'}`}>
             {recordsWithErrors.length}
           </p>
         </div>
-        <div className="bg-gray-50 p-4 rounded">
-          <p className="text-sm text-gray-600">Files</p>
-          <p className="text-2xl font-bold text-gray-600">{previewData.previewData.length}</p>
+        <div className={`p-4 rounded ${hasChanges ? 'bg-yellow-50' : 'bg-gray-50'}`}>
+          <p className="text-sm text-gray-600">Edits Made</p>
+          <p className={`text-2xl font-bold ${hasChanges ? 'text-yellow-600' : 'text-gray-600'}`}>
+            {Object.keys(editingRecords).length}
+          </p>
         </div>
       </div>
 
-      {/* File Previews */}
-      <div className="space-y-6">
-        {previewData.previewData.map((fileData, fileIdx) => (
-          <div key={fileIdx} className="border rounded-lg p-4">
-            <h3 className="font-bold text-lg mb-2">{fileData.fileName}</h3>
-            {fileData.status === 'error' ? (
-              <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded">
-                Error: {fileData.error}
-              </div>
-            ) : (
-              <>
-                <p className="text-sm text-gray-600 mb-4">
-                  {fileData.recordCount} records {fileData.status === 'warning' ? '⚠️ (with issues)' : '✅ (valid)'}
-                </p>
-                {fileData.status === 'warning' && (
-                  <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded mb-4">
-                    <p className="text-sm font-semibold text-red-800">Some records have validation errors</p>
+      {/* Filter Toggle */}
+      <div className="mb-4 flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="filterErrors"
+          checked={filterErrors}
+          onChange={(e) => setFilterErrors(e.target.checked)}
+          className="w-4 h-4"
+        />
+        <label htmlFor="filterErrors" className="text-sm text-gray-700 cursor-pointer">
+          Show only records with issues
+        </label>
+      </div>
+
+      {/* Records List */}
+      <div className="space-y-3 mb-6 max-h-96 overflow-y-auto border rounded-lg p-4 bg-gray-50">
+        {getRecordsToImport().length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            No records to display
+          </div>
+        ) : (
+          getRecordsToImport().map((record, idx) => {
+            const rowKey = `${idx}`;
+            const isExpanded = expandedRows[rowKey];
+            const hasErrors = record._originalErrors && record._originalErrors.length > 0;
+            const isEdited = record._edited;
+
+            return (
+              <div key={idx} className={`border rounded p-3 ${hasErrors ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white'}`}>
+                {/* Collapsed View */}
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => toggleRowExpand(rowKey)}
+                    className="flex items-center gap-2 flex-1 text-left hover:bg-gray-100 p-2 rounded transition"
+                  >
+                    <span className="text-gray-600">{isExpanded ? '▼' : '▶'}</span>
+                    <div className="flex-1">
+                      <p className="font-semibold">
+                        {record.owner_name || <span className="text-red-600">MISSING</span>}
+                        {isEdited && <span className="ml-2 text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded">Edited</span>}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Pet: {record.pet_name || <span className="text-red-600">MISSING</span>} | 
+                        Service: {record.service_type || <span className="text-red-600">MISSING</span>}
+                      </p>
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-2">
+                    {hasErrors && (
+                      <span className="text-xs bg-red-600 text-white px-2 py-1 rounded font-semibold">
+                        {record._originalErrors.length} issue{record._originalErrors.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {!hasErrors && (
+                      <span className="text-xs bg-green-600 text-white px-2 py-1 rounded font-semibold">✓ Valid</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Expanded View */}
+                {isExpanded && (
+                  <div className="mt-4 pt-4 border-t">
+                    {/* Edit Fields */}
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Owner Name *</label>
+                        <input
+                          type="text"
+                          value={getDisplayValue(0, idx, 'owner_name', record.owner_name || '')}
+                          onChange={(e) => handleEditField(0, idx, 'owner_name', e.target.value)}
+                          className={`w-full px-3 py-2 border rounded ${!getDisplayValue(0, idx, 'owner_name', record.owner_name || '') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                          placeholder="Required"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Phone *</label>
+                        <input
+                          type="text"
+                          value={getDisplayValue(0, idx, 'owner_phone', record.owner_phone || '')}
+                          onChange={(e) => handleEditField(0, idx, 'owner_phone', e.target.value)}
+                          className={`w-full px-3 py-2 border rounded ${!getDisplayValue(0, idx, 'owner_phone', record.owner_phone || '') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                          placeholder="Required"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Pet Name *</label>
+                        <input
+                          type="text"
+                          value={getDisplayValue(0, idx, 'pet_name', record.pet_name || '')}
+                          onChange={(e) => handleEditField(0, idx, 'pet_name', e.target.value)}
+                          className={`w-full px-3 py-2 border rounded ${!getDisplayValue(0, idx, 'pet_name', record.pet_name || '') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                          placeholder="Required"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Service Type *</label>
+                        <select
+                          value={getDisplayValue(0, idx, 'service_type', record.service_type || '')}
+                          onChange={(e) => handleEditField(0, idx, 'service_type', e.target.value)}
+                          className={`w-full px-3 py-2 border rounded ${!getDisplayValue(0, idx, 'service_type', record.service_type || '') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                        >
+                          <option value="">-- Select --</option>
+                          <option value="adoption">Adoption</option>
+                          <option value="rescue">Rescue</option>
+                          <option value="medical">Medical</option>
+                          <option value="lost_found">Lost & Found</option>
+                          <option value="shelter">Shelter</option>
+                          <option value="training">Training</option>
+                          <option value="grooming">Grooming</option>
+                          <option value="boarding">Boarding</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Email</label>
+                        <input
+                          type="email"
+                          value={getDisplayValue(0, idx, 'owner_email', record.owner_email || '')}
+                          onChange={(e) => handleEditField(0, idx, 'owner_email', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded"
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Pet Species</label>
+                        <input
+                          type="text"
+                          value={getDisplayValue(0, idx, 'pet_species', record.pet_species || '')}
+                          onChange={(e) => handleEditField(0, idx, 'pet_species', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded"
+                          placeholder="e.g., Dog, Cat, Bird"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Breed</label>
+                        <input
+                          type="text"
+                          value={getDisplayValue(0, idx, 'breed', record.breed || '')}
+                          onChange={(e) => handleEditField(0, idx, 'breed', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded"
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
+                        <select
+                          value={getDisplayValue(0, idx, 'status', record.status || '')}
+                          onChange={(e) => handleEditField(0, idx, 'status', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded"
+                        >
+                          <option value="">-- Select --</option>
+                          <option value="open">Open</option>
+                          <option value="in_progress">In Progress</option>
+                          <option value="completed">Completed</option>
+                          <option value="on_hold">On Hold</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Notes */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Notes</label>
+                      <textarea
+                        value={getDisplayValue(0, idx, 'notes', record.notes || '')}
+                        onChange={(e) => handleEditField(0, idx, 'notes', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded"
+                        rows="2"
+                        placeholder="Optional notes"
+                      />
+                    </div>
+
+                    {/* Errors */}
+                    {hasErrors && (
+                      <div className="mt-4 bg-red-50 border-l-4 border-red-500 p-3 rounded">
+                        <p className="text-sm font-semibold text-red-800 mb-2">Validation Issues:</p>
+                        <div className="space-y-1">
+                          {record._originalErrors.map((error, errIdx) => (
+                            <div key={errIdx} className="flex items-start gap-2 text-sm text-red-700">
+                              <span className="font-bold mt-0.5">•</span>
+                              <span>{error}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="px-4 py-2 text-left">Owner</th>
-                        <th className="px-4 py-2 text-left">Phone</th>
-                        <th className="px-4 py-2 text-left">Pet</th>
-                        <th className="px-4 py-2 text-left">Service</th>
-                        <th className="px-4 py-2 text-left">Issues</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(fileData.records || []).slice(0, 5).map((record, recordIdx) => (
-                        <React.Fragment key={recordIdx}>
-                          <tr className={record._errors?.length > 0 ? 'bg-red-50' : 'bg-green-50'}>
-                            <td className="px-4 py-2">{record.owner_name || <span className="text-red-500 font-semibold">MISSING</span>}</td>
-                            <td className="px-4 py-2">{record.owner_phone || <span className="text-red-500 font-semibold">MISSING</span>}</td>
-                            <td className="px-4 py-2">{record.pet_name || <span className="text-red-500 font-semibold">MISSING</span>}</td>
-                            <td className="px-4 py-2">{record.service_type || <span className="text-red-500 font-semibold">MISSING</span>}</td>
-                            <td className="px-4 py-2">
-                              {record._errors?.length > 0 ? (
-                                <span className="text-xs text-red-700 font-semibold">✗ {record._errors.length}</span>
-                              ) : (
-                                <span className="text-xs text-green-700 font-semibold">✓</span>
-                              )}
-                            </td>
-                          </tr>
-                          {record._errors?.length > 0 && (
-                            <tr className="bg-red-100">
-                              <td colSpan="5" className="px-4 py-2">
-                                <div className="text-xs text-red-800 space-y-1">
-                                  {record._errors.map((error, errIdx) => (
-                                    <div key={errIdx} className="flex items-start gap-2">
-                                      <span className="text-red-600 font-bold mt-0.5">•</span>
-                                      <span>{error}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                  {(fileData.records?.length || 0) > 5 && (
-                    <p className="text-sm text-gray-500 mt-2">
-                      ... and {fileData.records.length - 5} more records
-                    </p>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        ))}
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Actions */}
-      <div className="flex gap-3 mt-6 pt-6 border-t">
+      <div className="flex gap-3 pt-6 border-t">
         <button
           onClick={onCancel}
           disabled={loading}
@@ -363,11 +527,12 @@ const DataPreview = ({ previewData, onConfirm, onCancel, loading }) => {
           ← Back to Upload
         </button>
         <button
-          onClick={onConfirm}
-          disabled={loading || recordsWithErrors.length === totalRecords}
+          onClick={() => onConfirm(getRecordsToImport())}
+          disabled={loading || !canImport}
           className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded-lg transition"
+          title={!canImport ? "No valid records to import" : ""}
         >
-          {loading ? 'Importing...' : '✅ Confirm Import'}
+          {loading ? 'Importing...' : `✅ Import ${getRecordsToImport().filter(r => !r._originalErrors || r._originalErrors.length === 0).length} Valid Records`}
         </button>
       </div>
     </div>
